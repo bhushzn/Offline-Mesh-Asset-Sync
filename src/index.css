@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-tactical: #0a0d0f;
+    --surface-tactical: #11161a;
+    --border-tactical: #232c35;
+  }
+
+  body {
+    @apply bg-[#0a0d0f] text-slate-200 antialiased selection:bg-[#ff5533]/30 selection:text-white;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    overflow-x: hidden;
+  }
+}
+
+/* Custom Tactical Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0d1114;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #232c35;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #394754;
+}
+
+/* Tactical UI utilities */
+.tactical-border {
+  border: 1px solid #232c35;
+}
+
+.tactical-panel {
+  background: #11161a;
+  border: 1px solid #232c35;
+}
+
+.tactical-card {
+  background: #161c22;
+  border: 1px solid #232c35;
+  transition: all 0.2s ease-in-out;
+}
+
+.tactical-card:hover {
+  border-color: #364452;
+}
+
+.tactical-glow-orange {
+  box-shadow: 0 0 15px rgba(255, 85, 51, 0.2);
+}
+
+.tactical-glow-emerald {
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);
+}
+
+.tactical-glow-cyan {
+  box-shadow: 0 0 15px rgba(6, 182, 212, 0.2);
+}
+
+/* Scanline and Grid effect */
+.tactical-grid-bg {
+  background-size: 32px 32px;
+  background-image: 
+    linear-gradient(to right, rgba(35, 44, 53, 0.25) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(35, 44, 53, 0.25) 1px, transparent 1px);
+}
+
+.tactical-dot-bg {
+  background-size: 24px 24px;
+  background-image: radial-gradient(rgba(107, 125, 142, 0.2) 1px, transparent 1px);
+}
