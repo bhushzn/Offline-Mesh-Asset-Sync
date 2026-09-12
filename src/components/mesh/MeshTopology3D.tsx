@@ -67,8 +67,9 @@ export const MeshTopology3D: React.FC<MeshTopology3DProps> = ({
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(width, heightPx);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    containerRef.current.innerHTML = '';
-    containerRef.current.appendChild(renderer.domElement);
+    
+    const container = containerRef.current;
+    container.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
     // 4. Lighting
@@ -341,6 +342,9 @@ export const MeshTopology3D: React.FC<MeshTopology3DProps> = ({
       if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
       window.removeEventListener('resize', handleResize);
       domElement.removeEventListener('pointerdown', handlePointerDown);
+      if (container && container.contains(domElement)) {
+        container.removeChild(domElement);
+      }
       unsubPacket();
       renderer.dispose();
     };
