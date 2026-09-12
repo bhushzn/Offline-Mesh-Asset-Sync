@@ -19,7 +19,7 @@
 | **Event** | **Engineers 2047 (VISHVA-TECH '26)** — SATI Vidisha |
 | **Domain Track** | **Disaster Management, Defense Logistics & Resilient Public Infrastructure (Viksit Bharat @ 2047)** |
 | **Primary Repository** | [https://github.com/bhushzn/Offline-Mesh-Asset-Sync](https://github.com/bhushzn/Offline-Mesh-Asset-Sync) |
-| **Working Prototype** | Local PWA at `http://localhost:5173` • Central Gateway at `http://localhost:3001` |
+| **Working Prototype** | **[Live Web App (Vercel)](https://offline-mesh-asset-sync.vercel.app/)** • Local PWA (`http://localhost:5173`) |
 | **Evaluation Round** | Round 1 (Desk-Side Technical) & Round 2 (Grand Finale Stage Demos) |
 
 ---
