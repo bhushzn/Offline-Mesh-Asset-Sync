@@ -1,6 +1,20 @@
-// FIELDLINK Tactical Types & CRDT Data Models
+// FIELDLINK Tactical Types & Canonical Domain Models
+
+export type OperatingMode = 'FIELD_MODE' | 'DEMO_MODE';
 
 export type SyncStatus = 'synced' | 'pending' | 'syncing' | 'failed';
+
+export type SyncQueueState = 
+  | 'PENDING'
+  | 'QUEUED'
+  | 'SENDING'
+  | 'SENT'
+  | 'REMOTE_RECEIVED'
+  | 'REMOTE_VALIDATED'
+  | 'REMOTE_MERGED'
+  | 'ACK_RECEIVED'
+  | 'SYNCED'
+  | 'FAILED';
 
 export interface BaseTacticalEntity {
   id: string;
@@ -10,8 +24,12 @@ export interface BaseTacticalEntity {
   syncStatus: SyncStatus;
   isDeleted?: boolean;
   lamportClock: number;
+  hlcTimestamp?: string;
 }
 
+// -------------------------------------------------------------
+// Assets & Equipment
+// -------------------------------------------------------------
 export type AssetCategory = 'Medical' | 'Comms' | 'Weapons' | 'Mobility' | 'Power' | 'Tactical Gear';
 export type AssetCondition = 'Good' | 'Operational' | 'Degraded' | 'Critical';
 export type AssetStatus = 'Available' | 'Deployed' | 'Maintenance' | 'Missing';
@@ -22,7 +40,7 @@ export interface Asset extends BaseTacticalEntity {
   category: AssetCategory;
   condition: AssetCondition;
   status: AssetStatus;
-  assignment: string; // e.g. "South sector", "Alpha Lead", "Unassigned"
+  assignment: string;
   sector: string;
   serialNumber: string;
   notes: string;
@@ -41,6 +59,9 @@ export interface AssetDeployment extends BaseTacticalEntity {
   notes: string;
 }
 
+// -------------------------------------------------------------
+// Personnel & Muster Roll
+// -------------------------------------------------------------
 export type PersonnelStatus = 'Active' | 'Deployed' | 'Rest' | 'Injured' | 'MIA';
 export type RollCallStatus = 'Present' | 'Absent' | 'Missing' | 'Injured' | 'Other';
 
@@ -84,6 +105,9 @@ export interface RollCallRecord extends BaseTacticalEntity {
   };
 }
 
+// -------------------------------------------------------------
+// Checklists
+// -------------------------------------------------------------
 export type ChecklistCategory = 'Equipment Inspection' | 'Deployment Prep' | 'Emergency Response' | 'Medical Triage' | 'Vehicle Check';
 
 export interface ChecklistItem {
@@ -106,6 +130,9 @@ export interface ChecklistExecution extends BaseTacticalEntity {
   };
 }
 
+// -------------------------------------------------------------
+// Incidents (SITREP)
+// -------------------------------------------------------------
 export type IncidentType = 'Medical Emergency' | 'Equipment Failure' | 'Comms Blackout' | 'Perimeter Alert' | 'Hazard Warning' | 'Supply Shortage';
 export type IncidentSeverity = 'Low' | 'Medium' | 'High' | 'Critical';
 export type IncidentStatus = 'Open' | 'Monitoring' | 'Resolved' | 'Escalated';
@@ -128,6 +155,22 @@ export interface Incident extends BaseTacticalEntity {
   resolvedAt?: number;
 }
 
+// -------------------------------------------------------------
+// Devices & Transport Abstraction
+// -------------------------------------------------------------
+export type TransportType = 'WebRTC' | 'BLE' | 'LocalNetwork' | 'Cloud' | 'Simulated';
+export type TransportStatus = 'available' | 'connected' | 'connecting' | 'disconnected' | 'unavailable';
+
+export interface TransportCapabilities {
+  type: TransportType;
+  isAvailable: boolean;
+  isSupported: boolean;
+  latencyMs: number;
+  bandwidthKbps?: number;
+  mtuBytes?: number;
+  notes?: string;
+}
+
 export interface DeviceMetadata {
   deviceId: string;
   deviceName: string;
@@ -139,30 +182,8 @@ export interface DeviceMetadata {
   isTrusted: boolean;
   lastSeen: number;
   vectorClock: Record<string, number>;
-}
-
-export interface CRDTOperation {
-  id: string; // unique op ID
-  entityType: 'asset' | 'personnel' | 'deployment' | 'roll_call' | 'checklist' | 'incident' | 'device';
-  entityId: string;
-  operationType: 'CREATE' | 'UPDATE' | 'DELETE' | 'MERGE';
-  payload: any;
-  vectorClock: Record<string, number>;
-  lamportClock: number;
-  timestamp: number;
-  originDeviceId: string;
-  syncedWithPeers: string[];
-  hash: string;
-}
-
-export interface SyncQueueItem {
-  id: string;
-  opId: string;
-  operation: CRDTOperation;
-  status: SyncStatus;
-  retries: number;
-  lastAttempt?: number;
-  errorMessage?: string;
+  publicKey?: string;
+  transportType?: TransportType;
 }
 
 export interface PeerNode {
@@ -174,8 +195,157 @@ export interface PeerNode {
   status: 'online' | 'syncing' | 'discovered' | 'disconnected';
   lastSyncAt: number;
   latencyMs: number;
-  connectionType: 'WebRTC' | 'BroadcastChannel' | 'BLE_Simulated';
+  connectionType: TransportType;
+  isSimulated?: boolean;
+  isTrusted: boolean;
+  batteryLevel?: number;
   position3D?: [number, number, number];
+}
+
+// -------------------------------------------------------------
+// CRDT & Sync Queue
+// -------------------------------------------------------------
+export interface CRDTOperation {
+  id: string; // unique op ID (UUID or hash)
+  entityType: 'asset' | 'personnel' | 'deployment' | 'roll_call' | 'checklist' | 'incident' | 'device';
+  entityId: string;
+  operationType: 'CREATE' | 'UPDATE' | 'DELETE' | 'MERGE';
+  payload: any;
+  vectorClock: Record<string, number>;
+  lamportClock: number;
+  hlcTimestamp: string;
+  timestamp: number;
+  originDeviceId: string;
+  syncedWithPeers: string[];
+  hash: string; // SHA-256 integrity hash
+  signature?: string;
+}
+
+export interface SyncQueueItem {
+  id: string;
+  opId: string;
+  operation: CRDTOperation;
+  state: SyncQueueState;
+  status: SyncStatus;
+  retries: number;
+  maxRetries: number;
+  nextAttemptAt?: number;
+  lastAttemptAt?: number;
+  errorMessage?: string;
+  acknowledgedByPeers: string[];
+  targetPeerId?: string;
+  createdAt: number;
+}
+
+// -------------------------------------------------------------
+// Structured Sync Protocol Messages
+// -------------------------------------------------------------
+export type SyncMessageType = 
+  | 'HELLO'
+  | 'CAPABILITIES'
+  | 'AUTH_REQUEST'
+  | 'AUTH_RESPONSE'
+  | 'SYNC_REQUEST'
+  | 'SYNC_RESPONSE'
+  | 'OPERATION'
+  | 'OPERATION_BATCH'
+  | 'SYNC_ACK'
+  | 'SYNC_COMPLETE'
+  | 'HEARTBEAT'
+  | 'ERROR';
+
+export interface SyncMessage<T = any> {
+  msgId: string;
+  type: SyncMessageType;
+  senderDeviceId: string;
+  targetDeviceId?: string; // empty for broadcast
+  timestamp: number;
+  vectorClock: Record<string, number>;
+  hlcTimestamp: string;
+  payload: T;
+  nonce?: string;
+  signature?: string;
+}
+
+// -------------------------------------------------------------
+// Store-and-Forward Mesh Packets
+// -------------------------------------------------------------
+export interface MeshPacket {
+  packetId: string;
+  originDeviceId: string;
+  destinationDeviceId: string; // 'BROADCAST' or specific ID
+  ttl: number; // Max hops remaining (e.g. 4)
+  hopCount: number;
+  path: string[]; // e.g. ["A-17", "B-04", "COMMAND"]
+  payload: SyncMessage;
+  timestamp: number;
+  hash: string;
+}
+
+// -------------------------------------------------------------
+// Conflict Resolution Audit Log
+// -------------------------------------------------------------
+export interface ConflictRecord {
+  id?: string;
+  conflictId: string;
+  entityType: string;
+  entityId: string;
+  nodeAId: string;
+  nodeAValue: any;
+  nodeATimestamp: string;
+  nodeBId: string;
+  nodeBValue: any;
+  nodeBTimestamp: string;
+  resolutionRule: 'LWW_HLC_WINNER' | 'VECTOR_DOMINANCE' | 'MERGE_SET';
+  winningNodeId: string;
+  winningValue: any;
+  resolvedAt: number;
+}
+
+// -------------------------------------------------------------
+// Local Event Audit Trail
+// -------------------------------------------------------------
+export interface AuditEvent {
+  id: string;
+  timestamp: number;
+  deviceId: string;
+  eventType: 
+    | 'DATA_MODIFIED'
+    | 'PEER_DISCOVERED'
+    | 'PEER_CONNECTED'
+    | 'PEER_DISCONNECTED'
+    | 'SYNC_INITIATED'
+    | 'SYNC_COMPLETED'
+    | 'CONFLICT_RESOLVED'
+    | 'AUTH_VERIFIED'
+    | 'PACKET_FORWARDED'
+    | 'OFFLINE_FALLBACK'
+    | 'ERROR';
+  entityType?: string;
+  entityId?: string;
+  details: string;
+  severity: 'INFO' | 'WARN' | 'ERROR' | 'SUCCESS';
+}
+
+// -------------------------------------------------------------
+// Readiness Score
+// -------------------------------------------------------------
+export interface ReadinessScore {
+  overallScore: number; // 0 - 100%
+  assetScore: number;    // Weight: 30%
+  personnelScore: number;// Weight: 30%
+  checklistScore: number;// Weight: 20%
+  incidentScore: number; // Weight: 20%
+  lastCalculatedAt: number;
+  details: {
+    assetsAvailable: number;
+    assetsTotal: number;
+    personnelAccounted: number;
+    personnelTotal: number;
+    checklistsCompleted: number;
+    checklistsTotal: number;
+    criticalIncidents: number;
+  };
 }
 
 export interface SyncStats {
@@ -185,4 +355,7 @@ export interface SyncStats {
   lastSyncTime: number | null;
   activePeersCount: number;
   totalOpsCount: number;
+  opsExchanged?: number;
+  conflictsResolved?: number;
 }
+

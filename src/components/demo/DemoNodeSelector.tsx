@@ -69,7 +69,7 @@ export const DemoNodeSelector: React.FC<Props> = ({ activeDevice, setActiveDevic
     tacticalAudio.playClick();
     setActiveDevice(node);
     syncQueue.setDeviceId(node.deviceId);
-    p2pMesh.setLocalIdentity(node.deviceId, node.deviceName, node.role);
+    p2pMesh.setLocalDevice(node.deviceId, node.deviceName, node.role);
     offlineStorage.put(STORES.DEVICE_METADATA, node);
   };
 

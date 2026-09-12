@@ -1,7 +1,8 @@
-// FIELDLINK Root Application
+// FIELDLINK Root Tactical PWA Application
 import React, { useEffect, useState } from 'react';
 import { ActiveTab, Sidebar } from './components/layout/Sidebar';
 import { Header } from './components/layout/Header';
+import { BottomNav } from './components/layout/BottomNav';
 import { DashboardView } from './components/views/DashboardView';
 import { AssetsView } from './components/views/AssetsView';
 import { PersonnelView } from './components/views/PersonnelView';
@@ -9,35 +10,38 @@ import { ChecklistsView } from './components/views/ChecklistsView';
 import { IncidentsView } from './components/views/IncidentsView';
 import { MapView } from './components/views/MapView';
 import { SyncCenterView } from './components/views/SyncCenterView';
+import { AuditLogView } from './components/views/AuditLogView';
 import { SettingsView } from './components/views/SettingsView';
 import { DemoNodeSelector } from './components/demo/DemoNodeSelector';
 import { AutomatedTestSuiteModal } from './components/test/AutomatedTestSuiteModal';
-import { DeviceMetadata, SyncStats } from './types/tactical';
+import { DeviceMetadata, OperatingMode, SyncStats } from './types/tactical';
 import { DEFAULT_DEVICE, seedDatabaseIfEmpty } from './services/seedData';
 import { syncManager } from './services/syncManager';
+import { p2pMesh } from './services/p2pMeshService';
 import { tacticalAudio } from './utils/audio';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
   const [activeDevice, setActiveDevice] = useState<DeviceMetadata>(DEFAULT_DEVICE);
+  const [mode, setMode] = useState<OperatingMode>('FIELD_MODE');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isTestSuiteOpen, setIsTestSuiteOpen] = useState(false);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [syncStats, setSyncStats] = useState<SyncStats>({
     pendingCount: 0,
-    syncedCount: 6,
+    syncedCount: 8,
     failedCount: 0,
     lastSyncTime: Date.now(),
     activePeersCount: 4,
-    totalOpsCount: 12,
+    totalOpsCount: 16,
   });
 
   useEffect(() => {
     // 1. Seed database with realistic tactical data
     seedDatabaseIfEmpty();
 
-    // 2. Listen to network status
+    // 2. Listen to browser network status
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
     window.addEventListener('online', handleOnline);
@@ -60,6 +64,12 @@ export function App() {
     tacticalAudio.playSyncSuccess();
   };
 
+  const handleToggleMode = (newMode: OperatingMode) => {
+    setMode(newMode);
+    p2pMesh.setMode(newMode);
+    tacticalAudio.playClick();
+  };
+
   const getBreadcrumbTitle = () => {
     switch (activeTab) {
       case 'dashboard':
@@ -67,25 +77,27 @@ export function App() {
       case 'assets':
         return 'Assets';
       case 'personnel':
-        return 'Personnel';
+        return 'Personnel & Muster';
       case 'checklists':
         return 'Checklists';
       case 'incidents':
-        return 'Incidents';
+        return 'Incidents / SITREP';
       case 'map':
-        return 'Tactical Map / GIS';
+        return 'Tactical Map';
       case 'sync':
         return 'Sync Center';
+      case 'audit':
+        return 'Audit Trail';
       case 'settings':
         return 'Settings';
       default:
-        return 'Field Operations';
+        return 'Mesh Operations';
     }
   };
 
   return (
-    <div className="flex h-screen w-screen bg-[#0a0d0f] text-slate-200 overflow-hidden font-sans select-none">
-      {/* Tactical Left Navigation Sidebar */}
+    <div className="flex h-screen w-screen bg-[#f8fafc] text-slate-900 overflow-hidden font-sans select-none">
+      {/* Desktop Navigation Sidebar */}
       <Sidebar
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -101,6 +113,8 @@ export function App() {
           breadcrumb={getBreadcrumbTitle()}
           activeDevice={activeDevice}
           syncStats={syncStats}
+          mode={mode}
+          onToggleMode={handleToggleMode}
           onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
           onOpenTestSuite={() => setIsTestSuiteOpen(true)}
           onManualSync={handleManualSync}
@@ -110,13 +124,14 @@ export function App() {
         />
 
         {/* Scrollable View Container */}
-        <main className="flex-1 overflow-y-auto tactical-grid-bg relative pb-16">
+        <main className="flex-1 overflow-y-auto tactical-grid-bg relative pb-20 md:pb-16">
           {activeTab === 'dashboard' && (
             <DashboardView
               onNavigate={(tab) => setActiveTab(tab)}
               onOpenLogIncident={() => setActiveTab('incidents')}
               syncStats={syncStats}
               activeDevice={activeDevice}
+              mode={mode}
             />
           )}
           {activeTab === 'assets' && <AssetsView />}
@@ -125,6 +140,7 @@ export function App() {
           {activeTab === 'incidents' && <IncidentsView />}
           {activeTab === 'map' && <MapView />}
           {activeTab === 'sync' && <SyncCenterView syncStats={syncStats} />}
+          {activeTab === 'audit' && <AuditLogView />}
           {activeTab === 'settings' && (
             <SettingsView
               activeDevice={activeDevice}
@@ -137,8 +153,15 @@ export function App() {
           )}
         </main>
 
+        {/* Mobile Bottom Navigation Bar */}
+        <BottomNav
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          pendingSyncCount={syncStats.pendingCount}
+        />
+
         {/* Bottom Multi-Node Demo Simulation Bar */}
-        <div className="sticky bottom-0 z-20">
+        <div className="hidden md:block sticky bottom-0 z-20">
           <DemoNodeSelector
             activeDevice={activeDevice}
             setActiveDevice={setActiveDevice}

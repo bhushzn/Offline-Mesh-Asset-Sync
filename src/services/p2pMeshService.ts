@@ -1,47 +1,77 @@
-// FIELDLINK P2P Mesh Transport Service (BroadcastChannel + WebRTC DataChannels + WebSocket Signaling + AES-GCM)
-import { PeerNode } from '../types/tactical';
-import { encryptMeshPayload, decryptMeshPayload, EncryptedPayload } from '../utils/crypto';
+// ============================================================
+// FIELDLINK — Real P2P Mesh Network & Transport Coordinator
+// ============================================================
 
-export type MeshMessage = 
-  | { type: 'DISCOVERY_PING'; deviceId: string; deviceName: string; role: string; vectorClock: Record<string, number>; timestamp: number }
-  | { type: 'DISCOVERY_PONG'; deviceId: string; deviceName: string; role: string; vectorClock: Record<string, number>; timestamp: number }
-  | { type: 'SYNC_REQUEST'; fromDeviceId: string; toDeviceId: string; vectorClock: Record<string, number> }
-  | { type: 'SYNC_RESPONSE'; fromDeviceId: string; toDeviceId: string; ops: any[]; vectorClock: Record<string, number> }
-  | { type: 'SYNC_ACK'; fromDeviceId: string; toDeviceId: string; syncedOpIds: string[] }
-  | { type: 'WEBRTC_SIGNAL'; fromDeviceId: string; toDeviceId: string; sdp?: any; candidate?: any }
-  | { type: 'ENCRYPTED_MESH_PACKET'; fromDeviceId: string; toDeviceId?: string; encrypted: EncryptedPayload };
+import { 
+  OperatingMode, 
+  PeerNode, 
+  SyncMessage, 
+  SyncMessageType, 
+  TransportCapabilities, 
+  TransportType 
+} from '../types/tactical';
+import { encryptMeshPayload, decryptMeshPayload, EncryptedPayload, sha256Hex } from '../utils/crypto';
+import { TransportManager } from './transports/TransportManager';
+import { MeshRouter } from './meshRouter';
+import { auditLog } from './auditLogService';
 
 type PeerListener = (peers: PeerNode[]) => void;
-type SyncMsgListener = (msg: MeshMessage) => void;
+type SyncMsgListener = (msg: SyncMessage) => void;
 
 class P2PMeshService {
-  private channel: BroadcastChannel | null = null;
-  private ws: WebSocket | null = null;
+  private transportManager: TransportManager;
+  private meshRouter: MeshRouter;
   private localDeviceId = 'device-a17';
   private localDeviceName = 'A-17 / NORTH NODE';
   private localRole = 'Field Lead';
-  private peers: Map<string, PeerNode> = new Map();
   private peerListeners: Set<PeerListener> = new Set();
   private msgListeners: Set<SyncMsgListener> = new Set();
-  private rtcConnections: Map<string, RTCPeerConnection> = new Map();
-  private rtcDataChannels: Map<string, RTCDataChannel> = new Map();
-  private heartbeatTimer: any = null;
-  private bleSupported = false;
   private encryptionEnabled = true;
+  private mode: OperatingMode = 'FIELD_MODE';
 
   constructor() {
-    this.checkCapabilities();
-    this.initBroadcastChannel();
-    this.initWebSocketSignaling();
-    this.initSimulatedMeshPeers();
+    const defaultWs = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+      ? `ws://${window.location.hostname}:3001/ws/mesh`
+      : 'wss://offline-mesh-asset-sync-production.up.railway.app/ws/mesh';
+    const wsUrl = (import.meta as any).env?.VITE_WS_URL || defaultWs;
+
+    this.transportManager = new TransportManager(this.localDeviceId, wsUrl);
+    this.meshRouter = new MeshRouter(this.localDeviceId);
+
+    // Subscribe to incoming transport messages
+    this.transportManager.subscribeMessages(async (rawMsg, peerId, transportType) => {
+      await this.handleIncomingRawMessage(rawMsg, peerId, transportType);
+    });
+
+    // Subscribe to peer list changes
+    this.transportManager.subscribePeers((peers) => {
+      this.notifyPeers(peers);
+    });
+
+    // Start periodic discovery beacon (HELLO packet)
+    this.startDiscoveryBeacon();
   }
 
-  private checkCapabilities() {
-    this.bleSupported = typeof navigator !== 'undefined' && 'bluetooth' in navigator;
+  public setMode(mode: OperatingMode) {
+    this.mode = mode;
+    this.transportManager.setMode(mode);
+    if (mode === 'DEMO_MODE') {
+      this.initSimulatedDemoPeers();
+    }
+  }
+
+  public getMode(): OperatingMode {
+    return this.mode;
+  }
+
+  public getTransportCapabilities(): TransportCapabilities[] {
+    return this.transportManager.getTransportCapabilities();
   }
 
   public isBLEAvailable(): boolean {
-    return this.bleSupported;
+    const caps = this.getTransportCapabilities();
+    const ble = caps.find(c => c.type === 'BLE');
+    return ble ? ble.isAvailable : false;
   }
 
   public isEncryptionActive(): boolean {
@@ -52,250 +82,23 @@ class P2PMeshService {
     this.encryptionEnabled = enabled;
   }
 
-  private initBroadcastChannel() {
-    try {
-      this.channel = new BroadcastChannel('fieldlink_tactical_mesh');
-      this.channel.onmessage = (event) => {
-        this.handleRawMessage(event.data);
-      };
-      this.startHeartbeat();
-    } catch (e) {
-      console.warn('BroadcastChannel not supported in this environment', e);
-    }
-  }
-
-  private initWebSocketSignaling() {
-    try {
-      const defaultWs = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-        ? `ws://${window.location.hostname}:3001/ws/mesh`
-        : 'wss://offline-mesh-asset-sync-production.up.railway.app/ws/mesh';
-      const wsUrl = (import.meta as any).env?.VITE_WS_URL || defaultWs;
-      this.ws = new WebSocket(wsUrl);
-
-      this.ws.onopen = () => {
-        this.ws?.send(JSON.stringify({
-          action: 'REGISTER_DEVICE',
-          deviceId: this.localDeviceId,
-          deviceName: this.localDeviceName,
-          role: this.localRole,
-        }));
-      };
-
-      this.ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.action === 'MESH_PACKET' && data.message) {
-            this.handleRawMessage(data.message);
-          }
-        } catch {
-          // ignore
-        }
-      };
-
-      this.ws.onerror = () => {
-        // Fallback gracefully to BroadcastChannel + local WebRTC
-      };
-    } catch {
-      // Offline fallback
-    }
-  }
-
-  private initSimulatedMeshPeers() {
-    const defaultPeers: PeerNode[] = [
-      {
-        deviceId: 'device-b04',
-        deviceName: 'B-04 / DELTA PATROL',
-        role: 'Scout Lead',
-        nodeType: 'Delta Patrol',
-        rssi: -58,
-        status: 'online',
-        lastSyncAt: Date.now() - 1000 * 45,
-        latencyMs: 14,
-        connectionType: 'BroadcastChannel',
-        position3D: [-2.5, 1.2, 0.8],
-      },
-      {
-        deviceId: 'device-c12',
-        deviceName: 'C-12 / RECON DRONE',
-        role: 'Airborne Relay',
-        nodeType: 'Relay Gateway',
-        rssi: -72,
-        status: 'online',
-        lastSyncAt: Date.now() - 1000 * 120,
-        latencyMs: 38,
-        connectionType: 'WebRTC',
-        position3D: [2.8, 2.0, -1.5],
-      },
-      {
-        deviceId: 'device-r01',
-        deviceName: 'R-01 / COMMAND RELAY',
-        role: 'HQ Gateway',
-        nodeType: 'Command Hub',
-        rssi: -42,
-        status: 'online',
-        lastSyncAt: Date.now() - 1000 * 300,
-        latencyMs: 8,
-        connectionType: 'WebRTC',
-        position3D: [0.2, -1.8, 2.2],
-      },
-      {
-        deviceId: 'device-m08',
-        deviceName: 'M-08 / MEDICAL OUTPOST',
-        role: 'Field Triage',
-        nodeType: 'Delta Patrol',
-        rssi: -84,
-        status: 'discovered',
-        lastSyncAt: Date.now() - 1000 * 600,
-        latencyMs: 52,
-        connectionType: 'BLE_Simulated',
-        position3D: [-1.8, -1.4, -2.0],
-      }
-    ];
-
-    defaultPeers.forEach(p => this.peers.set(p.deviceId, p));
-  }
-
-  public setLocalIdentity(deviceId: string, deviceName: string, role: string) {
+  public setLocalDevice(deviceId: string, deviceName: string, role: string) {
     this.localDeviceId = deviceId;
     this.localDeviceName = deviceName;
     this.localRole = role;
-    this.broadcastDiscovery();
   }
 
-  public startHeartbeat() {
-    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
-    this.heartbeatTimer = setInterval(() => {
-      this.broadcastDiscovery();
-    }, 10000);
-    this.broadcastDiscovery();
+  public getPeers(): PeerNode[] {
+    return this.transportManager.getPeers();
   }
 
-  public broadcastDiscovery() {
-    this.sendMessage({
-      type: 'DISCOVERY_PING',
-      deviceId: this.localDeviceId,
-      deviceName: this.localDeviceName,
-      role: this.localRole,
-      vectorClock: { [this.localDeviceId]: 1 },
-      timestamp: Date.now(),
-    });
-  }
-
-  public async sendMessage(msg: MeshMessage) {
-    let payloadToSend: any = msg;
-
-    if (this.encryptionEnabled && msg.type !== 'DISCOVERY_PING' && msg.type !== 'DISCOVERY_PONG') {
-      try {
-        const encrypted = await encryptMeshPayload(msg);
-        payloadToSend = {
-          type: 'ENCRYPTED_MESH_PACKET',
-          fromDeviceId: this.localDeviceId,
-          toDeviceId: (msg as any).toDeviceId,
-          encrypted,
-        };
-      } catch {
-        payloadToSend = msg;
-      }
-    }
-
-    if (this.channel) {
-      try {
-        this.channel.postMessage(payloadToSend);
-      } catch (e) {
-        console.error('Error posting mesh message:', e);
-      }
-    }
-
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      try {
-        this.ws.send(JSON.stringify({
-          action: 'BROADCAST_PACKET',
-          message: payloadToSend,
-        }));
-      } catch {
-        // ignore
-      }
-    }
-  }
-
-  private async handleRawMessage(raw: any) {
-    if (!raw) return;
-
-    if (raw.type === 'ENCRYPTED_MESH_PACKET' && raw.encrypted) {
-      if (raw.fromDeviceId === this.localDeviceId) return;
-      try {
-        const decrypted = await decryptMeshPayload<MeshMessage>(raw.encrypted);
-        this.handleIncomingMessage(decrypted);
-      } catch (e) {
-        console.warn('Failed to decrypt incoming mesh packet:', e);
-      }
-    } else {
-      this.handleIncomingMessage(raw as MeshMessage);
-    }
-  }
-
-  private handleIncomingMessage(msg: MeshMessage) {
-    if (!msg || (msg as any).deviceId === this.localDeviceId || (msg as any).fromDeviceId === this.localDeviceId) {
-      return;
-    }
-
-    if (msg.type === 'DISCOVERY_PING') {
-      const existing = this.peers.get(msg.deviceId);
-      const updatedPeer: PeerNode = {
-        deviceId: msg.deviceId,
-        deviceName: msg.deviceName,
-        role: msg.role,
-        nodeType: 'Field Node',
-        rssi: existing ? existing.rssi : -50 - Math.floor(Math.random() * 20),
-        status: 'online',
-        lastSyncAt: existing ? existing.lastSyncAt : Date.now(),
-        latencyMs: 12 + Math.floor(Math.random() * 15),
-        connectionType: 'BroadcastChannel',
-        position3D: existing?.position3D || [
-          (Math.random() - 0.5) * 4,
-          (Math.random() - 0.5) * 3,
-          (Math.random() - 0.5) * 4,
-        ],
-      };
-      this.peers.set(msg.deviceId, updatedPeer);
-      this.notifyPeers();
-
-      this.sendMessage({
-        type: 'DISCOVERY_PONG',
-        deviceId: this.localDeviceId,
-        deviceName: this.localDeviceName,
-        role: this.localRole,
-        vectorClock: { [this.localDeviceId]: 1 },
-        timestamp: Date.now(),
-      });
-    } else if (msg.type === 'DISCOVERY_PONG') {
-      const existing = this.peers.get(msg.deviceId);
-      const updatedPeer: PeerNode = {
-        deviceId: msg.deviceId,
-        deviceName: msg.deviceName,
-        role: msg.role,
-        nodeType: 'Field Node',
-        rssi: existing ? existing.rssi : -55,
-        status: 'online',
-        lastSyncAt: Date.now(),
-        latencyMs: 15,
-        connectionType: 'BroadcastChannel',
-        position3D: existing?.position3D || [
-          (Math.random() - 0.5) * 4,
-          (Math.random() - 0.5) * 3,
-          (Math.random() - 0.5) * 4,
-        ],
-      };
-      this.peers.set(msg.deviceId, updatedPeer);
-      this.notifyPeers();
-    }
-
-    this.msgListeners.forEach(cb => cb(msg));
+  public getDiscoveredPeers(): PeerNode[] {
+    return this.getPeers();
   }
 
   public subscribePeers(listener: PeerListener): () => void {
     this.peerListeners.add(listener);
-    listener(Array.from(this.peers.values()));
+    listener(this.getPeers());
     return () => this.peerListeners.delete(listener);
   }
 
@@ -304,48 +107,238 @@ class P2PMeshService {
     return () => this.msgListeners.delete(listener);
   }
 
-  private notifyPeers() {
-    const list = Array.from(this.peers.values());
-    this.peerListeners.forEach(cb => cb(list));
-  }
+  /**
+   * Broadcasts a typed Sync Protocol message across all active mesh transports.
+   */
+  public async broadcast(
+    type: SyncMessageType | any, 
+    payload?: any, 
+    vectorClock: Record<string, number> = {},
+    hlcTimestamp: string = ''
+  ): Promise<number> {
+    // Support legacy object argument or structured parameters
+    let finalType: SyncMessageType = 'OPERATION_BATCH';
+    let finalPayload: any = payload;
+    let finalVc = vectorClock;
+    let finalHlc = hlcTimestamp;
 
-  public updatePeerStatus(
-    deviceId: string,
-    status: 'online' | 'syncing' | 'discovered' | 'disconnected',
-    latencyMs?: number,
-  ) {
-    const peer = this.peers.get(deviceId);
-    if (peer) {
-      peer.status = status;
-      if (latencyMs !== undefined) {
-        peer.latencyMs = latencyMs;
-      }
-      if (status === 'online') {
-        peer.lastSyncAt = Date.now();
-      }
-      this.notifyPeers();
+    if (typeof type === 'object' && type !== null) {
+      finalType = (type.type as SyncMessageType) || 'OPERATION';
+      finalPayload = type;
+      finalVc = type.vectorClock || {};
+      finalHlc = type.hlcTimestamp || '';
+    } else {
+      finalType = type;
     }
+
+    const msg: SyncMessage = {
+      msgId: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      type: finalType,
+      senderDeviceId: this.localDeviceId,
+      timestamp: Date.now(),
+      vectorClock: finalVc,
+      hlcTimestamp: finalHlc,
+      payload: finalPayload,
+    };
+
+    let packetToSend: any = msg;
+    if (this.encryptionEnabled) {
+      try {
+        const encrypted = await encryptMeshPayload(msg);
+        packetToSend = {
+          isEncrypted: true,
+          encrypted,
+          senderDeviceId: this.localDeviceId,
+          timestamp: Date.now(),
+        };
+      } catch (err) {
+        console.warn('[Mesh] Encryption error, sending plain:', err);
+      }
+    }
+
+    const meshPacket = await this.meshRouter.createPacket(packetToSend, 'BROADCAST');
+    return await this.transportManager.broadcast(meshPacket);
   }
 
-  public async createWebRTCOffer(peerId: string): Promise<string> {
-    try {
-      const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+  /**
+   * Sends a targeted Sync Protocol message to a specific peer.
+   */
+  public async sendToPeer(
+    targetPeerId: string, 
+    type: SyncMessageType | any, 
+    payload?: any, 
+    vectorClock: Record<string, number> = {},
+    hlcTimestamp: string = ''
+  ): Promise<boolean> {
+    let finalType: SyncMessageType = 'SYNC_REQUEST';
+    let finalPayload: any = payload;
+    let finalVc = vectorClock;
+    let finalHlc = hlcTimestamp;
+
+    if (typeof type === 'object' && type !== null) {
+      finalType = (type.type as SyncMessageType) || 'OPERATION';
+      finalPayload = type;
+      finalVc = type.vectorClock || {};
+      finalHlc = type.hlcTimestamp || '';
+    } else {
+      finalType = type;
+    }
+
+    const msg: SyncMessage = {
+      msgId: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      type: finalType,
+      senderDeviceId: this.localDeviceId,
+      targetDeviceId: targetPeerId,
+      timestamp: Date.now(),
+      vectorClock: finalVc,
+      hlcTimestamp: finalHlc,
+      payload: finalPayload,
+    };
+
+    let packetToSend: any = msg;
+    if (this.encryptionEnabled) {
+      try {
+        const encrypted = await encryptMeshPayload(msg);
+        packetToSend = {
+          isEncrypted: true,
+          encrypted,
+          senderDeviceId: this.localDeviceId,
+          targetDeviceId: targetPeerId,
+          timestamp: Date.now(),
+        };
+      } catch (err) {
+        console.warn('[Mesh] Encryption error, sending plain:', err);
+      }
+    }
+
+    const meshPacket = await this.meshRouter.createPacket(packetToSend, targetPeerId);
+    return await this.transportManager.sendToPeer(targetPeerId, meshPacket);
+  }
+
+  private async handleIncomingRawMessage(raw: any, peerId: string, transportType: TransportType) {
+    if (!raw) return;
+
+    let payloadToProcess = raw;
+    if (raw.packetId && raw.path) {
+      const routing = await this.meshRouter.processIncomingPacket(raw);
+      if (!routing.shouldDeliver && !routing.shouldForward) {
+        return;
+      }
+
+      if (routing.shouldForward && routing.packetToForward) {
+        auditLog.log({
+          deviceId: this.localDeviceId,
+          eventType: 'PACKET_FORWARDED',
+          details: `Forwarded store-and-forward packet ${raw.packetId} (Hop ${raw.hopCount})`,
+          severity: 'INFO',
+        });
+        await this.transportManager.broadcast(routing.packetToForward);
+      }
+
+      if (!routing.shouldDeliver) {
+        return;
+      }
+      payloadToProcess = raw.payload;
+    }
+
+    let finalMsg: SyncMessage;
+    if (payloadToProcess && payloadToProcess.isEncrypted && payloadToProcess.encrypted) {
+      try {
+        finalMsg = await decryptMeshPayload<SyncMessage>(payloadToProcess.encrypted);
+      } catch (err) {
+        console.warn('[Mesh] Failed to decrypt mesh payload:', err);
+        return;
+      }
+    } else {
+      finalMsg = payloadToProcess as SyncMessage;
+    }
+
+    if (!finalMsg || !finalMsg.type || finalMsg.senderDeviceId === this.localDeviceId) {
+      return;
+    }
+
+    if (finalMsg.type === 'HELLO') {
+      this.sendToPeer(finalMsg.senderDeviceId, 'CAPABILITIES', {
+        deviceName: this.localDeviceName,
+        role: this.localRole,
       });
-      this.rtcConnections.set(peerId, pc);
-      const dc = pc.createDataChannel('fieldlink-data');
-      this.rtcDataChannels.set(peerId, dc);
+    }
 
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      return JSON.stringify(offer);
-    } catch {
-      return JSON.stringify({ type: 'offer', sdp: 'simulated-tactical-sdp' });
+    for (const listener of this.msgListeners) {
+      listener(finalMsg);
     }
   }
 
-  public getDiscoveredPeers(): PeerNode[] {
-    return Array.from(this.peers.values());
+  private startDiscoveryBeacon() {
+    if (typeof window === 'undefined') return;
+    setInterval(() => {
+      this.broadcast('HELLO', {
+        deviceName: this.localDeviceName,
+        role: this.localRole,
+      });
+    }, 15000);
+  }
+
+  private initSimulatedDemoPeers() {
+    if (this.mode !== 'DEMO_MODE') return;
+    
+    const demoPeers: PeerNode[] = [
+      {
+        deviceId: 'node-b04',
+        deviceName: 'B-04 / DELTA PATROL',
+        role: 'Patrol Lead',
+        nodeType: 'Delta Patrol',
+        rssi: -58,
+        status: 'online',
+        lastSyncAt: Date.now() - 32000,
+        latencyMs: 18,
+        connectionType: 'WebRTC',
+        isSimulated: true,
+        isTrusted: true,
+        batteryLevel: 61,
+        position3D: [35, 12, -20],
+      },
+      {
+        deviceId: 'node-m08',
+        deviceName: 'M-08 / MEDICAL SQUAD',
+        role: 'Combat Medic',
+        nodeType: 'Relay Gateway',
+        rssi: -74,
+        status: 'online',
+        lastSyncAt: Date.now() - 110000,
+        latencyMs: 42,
+        connectionType: 'BLE',
+        isSimulated: true,
+        isTrusted: true,
+        batteryLevel: 18,
+        position3D: [-30, -18, 25],
+      },
+      {
+        deviceId: 'node-hq01',
+        deviceName: 'HQ-01 / COMMAND HUB',
+        role: 'Tactical Command',
+        nodeType: 'Command Hub',
+        rssi: -42,
+        status: 'online',
+        lastSyncAt: Date.now() - 8000,
+        latencyMs: 8,
+        connectionType: 'Cloud',
+        isSimulated: true,
+        isTrusted: true,
+        batteryLevel: 94,
+        position3D: [0, 25, 0],
+      },
+    ];
+
+    for (const p of demoPeers) {
+      this.transportManager.addSimulatedPeer(p);
+    }
+  }
+
+  private notifyPeers(peers: PeerNode[]) {
+    for (const listener of this.peerListeners) {
+      listener(peers);
+    }
   }
 }
 

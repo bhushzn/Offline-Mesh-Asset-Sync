@@ -271,6 +271,7 @@ export const MeshTopology3D: React.FC<MeshTopology3DProps> = ({
               lastSyncAt: Date.now(),
               latencyMs: 16,
               connectionType: 'WebRTC',
+              isTrusted: true,
             };
             onSelectNode(peer);
           }

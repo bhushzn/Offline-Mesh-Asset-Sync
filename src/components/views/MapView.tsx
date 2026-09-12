@@ -1,3 +1,4 @@
+// FIELDLINK Tactical GIS & Mesh Map View
 import React, { useState, useEffect, useRef } from 'react';
 import { offlineStorage, STORES } from '../../services/offlineStorageService';
 import { p2pMesh } from '../../services/p2pMeshService';
@@ -13,15 +14,18 @@ import {
   Crosshair, 
   Shield, 
   Activity,
-  Maximize2
+  X
 } from 'lucide-react';
+import { tacticalAudio } from '../../utils/audio';
 
 export const MapView: React.FC = () => {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [peers, setPeers] = useState<PeerNode[]>([]);
   const [selectedItem, setSelectedItem] = useState<{ type: 'asset' | 'incident' | 'peer'; data: any } | null>(null);
-  const [mapMode, setMapMode] = useState<'tactical' | 'topo' | 'grid'>('tactical');
+  const [showAssets, setShowAssets] = useState(true);
+  const [showIncidents, setShowIncidents] = useState(true);
+  const [showMeshLinks, setShowMeshLinks] = useState(true);
   const [zoom, setZoom] = useState<number>(1);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -47,13 +51,19 @@ export const MapView: React.FC = () => {
     setPeers(p2pMesh.getDiscoveredPeers());
   };
 
-  // Base geographical reference (e.g. Sector 4 Tactical Grid)
-  const baseLat = 32.149;
-  const baseLng = 76.321;
+  // Tactical simulated GPS offsets
+  const getSimulatedCoords = (id: string, index: number) => {
+    const angle = (index * 60 * Math.PI) / 180;
+    const distance = 0.08 + (index % 3) * 0.04;
+    return {
+      lat: Math.sin(angle) * distance,
+      lng: Math.cos(angle) * distance,
+    };
+  };
 
-  // Convert GPS lat/lng or simulated offsets to canvas pixels
+  // Convert GPS lat/lng offset to canvas pixels
   const coordToCanvas = (latOffset: number, lngOffset: number, width: number, height: number) => {
-    const scale = 1400 * zoom;
+    const scale = 1600 * zoom;
     const cx = width / 2 + pan.x;
     const cy = height / 2 + pan.y;
     const x = cx + lngOffset * scale;
@@ -69,321 +79,239 @@ export const MapView: React.FC = () => {
     if (!ctx) return;
 
     const width = (canvas.width = canvas.parentElement?.clientWidth || 800);
-    const height = (canvas.height = canvas.parentElement?.clientHeight || 600);
+    const height = (canvas.height = canvas.parentElement?.clientHeight || 550);
 
-    // Background based on mapMode
-    ctx.fillStyle = mapMode === 'topo' ? '#0b1612' : mapMode === 'grid' ? '#080d1a' : '#0a0e17';
+    // Background: Clean tactical slate-900 surface
+    ctx.fillStyle = '#0f172a';
     ctx.fillRect(0, 0, width, height);
 
-    // Draw Grid Lines
-    ctx.strokeStyle = mapMode === 'topo' ? 'rgba(34, 197, 94, 0.12)' : 'rgba(56, 189, 248, 0.08)';
+    // Grid lines
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.07)';
     ctx.lineWidth = 1;
     const gridSize = 40 * zoom;
-    const startX = (pan.x % gridSize) - gridSize;
-    const startY = (pan.y % gridSize) - gridSize;
+    const offsetX = (width / 2 + pan.x) % gridSize;
+    const offsetY = (height / 2 + pan.y) % gridSize;
 
-    for (let x = startX; x < width + gridSize; x += gridSize) {
+    for (let x = offsetX; x < width; x += gridSize) {
       ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, height);
       ctx.stroke();
     }
-    for (let y = startY; y < height + gridSize; y += gridSize) {
+    for (let y = offsetY; y < height; y += gridSize) {
       ctx.beginPath();
       ctx.moveTo(0, y);
       ctx.lineTo(width, y);
       ctx.stroke();
     }
 
-    // Draw Topographic Contours if in topo mode
-    if (mapMode === 'topo') {
-      ctx.strokeStyle = 'rgba(34, 197, 94, 0.2)';
-      ctx.lineWidth = 1.5;
-      for (let r = 80 * zoom; r <= 400 * zoom; r += 60 * zoom) {
-        ctx.beginPath();
-        ctx.ellipse(width / 2 + pan.x, height / 2 + pan.y, r * 1.4, r, 0.3, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-    }
-
-    // Draw Mesh Peer Connection Lines
-    const localPos = coordToCanvas(0, 0, width, height);
-    peers.forEach((peer, idx) => {
-      const angle = (idx / Math.max(peers.length, 1)) * Math.PI * 2;
-      const dist = 0.08 + (idx % 3) * 0.04;
-      const peerPos = coordToCanvas(Math.sin(angle) * dist, Math.cos(angle) * dist, width, height);
-
+    // Concentric Range Rings from Origin
+    const center = { x: width / 2 + pan.x, y: height / 2 + pan.y };
+    [80, 160, 240, 320].forEach((r) => {
       ctx.beginPath();
-      ctx.strokeStyle = peer.status === 'online' ? 'rgba(59, 130, 246, 0.35)' : 'rgba(148, 163, 184, 0.2)';
-      ctx.lineWidth = 1.5;
-      ctx.setLineDash([4, 4]);
-      ctx.moveTo(localPos.x, localPos.y);
-      ctx.lineTo(peerPos.x, peerPos.y);
+      ctx.arc(center.x, center.y, r * zoom, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(14, 165, 233, 0.12)';
       ctx.stroke();
-      ctx.setLineDash([]);
     });
 
-    // Draw Local Node Marker
-    ctx.fillStyle = '#3b82f6';
+    // Draw Mesh Links between discovered peers
+    if (showMeshLinks && peers.length > 0) {
+      ctx.lineWidth = 1.5;
+      peers.forEach((peer, i) => {
+        const p1Coord = getSimulatedCoords(peer.deviceId, i + 1);
+        const p1 = coordToCanvas(p1Coord.lat, p1Coord.lng, width, height);
+
+        // Link to base
+        ctx.beginPath();
+        ctx.moveTo(center.x, center.y);
+        ctx.lineTo(p1.x, p1.y);
+        ctx.strokeStyle = peer.status === 'online' ? 'rgba(16, 185, 129, 0.4)' : 'rgba(56, 189, 248, 0.2)';
+        ctx.setLineDash([4, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      });
+    }
+
+    // Base Station (Local Device)
+    ctx.fillStyle = '#2563eb';
     ctx.beginPath();
-    ctx.arc(localPos.x, localPos.y, 8 * zoom, 0, Math.PI * 2);
+    ctx.arc(center.x, center.y, 8 * zoom, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = '#60a5fa';
+    ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // Pulse animation around local node
-    ctx.strokeStyle = 'rgba(59, 130, 246, 0.4)';
-    ctx.beginPath();
-    ctx.arc(localPos.x, localPos.y, 16 * zoom, 0, Math.PI * 2);
-    ctx.stroke();
-  }, [mapMode, zoom, pan, assets, incidents, peers]);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText('BASE (LOCAL)', center.x + 12, center.y + 4);
 
+    // Draw Mesh Peer Nodes
+    peers.forEach((peer, i) => {
+      const coord = getSimulatedCoords(peer.deviceId, i + 1);
+      const pt = coordToCanvas(coord.lat, coord.lng, width, height);
+
+      ctx.fillStyle = peer.status === 'online' ? '#10b981' : '#64748b';
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, 6 * zoom, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '10px monospace';
+      ctx.fillText(peer.deviceName, pt.x + 10, pt.y + 3);
+    });
+
+    // Draw Assets
+    if (showAssets) {
+      assets.slice(0, 8).forEach((asset, i) => {
+        const coord = getSimulatedCoords(asset.id, i + 3);
+        const pt = coordToCanvas(coord.lat * 0.7, coord.lng * 0.7, width, height);
+
+        ctx.fillStyle = asset.status === 'Available' ? '#10b981' : '#38bdf8';
+        ctx.fillRect(pt.x - 4 * zoom, pt.y - 4 * zoom, 8 * zoom, 8 * zoom);
+
+        ctx.fillStyle = '#e2e8f0';
+        ctx.font = '9px monospace';
+        ctx.fillText(asset.customId, pt.x + 8, pt.y + 3);
+      });
+    }
+
+    // Draw Incidents
+    if (showIncidents) {
+      incidents.slice(0, 5).forEach((inc, i) => {
+        const coord = getSimulatedCoords(inc.id, i + 5);
+        const pt = coordToCanvas(coord.lat * 1.2, coord.lng * 1.2, width, height);
+
+        ctx.fillStyle = inc.severity === 'Critical' ? '#ef4444' : '#f59e0b';
+        ctx.beginPath();
+        ctx.moveTo(pt.x, pt.y - 7 * zoom);
+        ctx.lineTo(pt.x + 6 * zoom, pt.y + 5 * zoom);
+        ctx.lineTo(pt.x - 6 * zoom, pt.y + 5 * zoom);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = '#f87171';
+        ctx.font = 'bold 9px monospace';
+        ctx.fillText(inc.incidentCode, pt.x + 8, pt.y + 3);
+      });
+    }
+  }, [assets, incidents, peers, zoom, pan, showAssets, showIncidents, showMeshLinks]);
+
+  // Mouse pan handlers
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true);
     setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   };
-
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isDragging) return;
     setPan({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
   };
-
   const handleMouseUp = () => setIsDragging(false);
 
-  const handleResetView = () => {
-    setZoom(1);
-    setPan({ x: 0, y: 0 });
-  };
-
   return (
-    <div className="flex flex-col h-[calc(100vh-4.5rem)] bg-slate-950 text-slate-100 relative overflow-hidden select-none">
-      {/* Top Map HUD Controls */}
-      <div className="absolute top-4 left-4 right-4 z-20 flex flex-wrap items-center justify-between gap-3 pointer-events-none">
-        <div className="flex items-center gap-2 bg-slate-900/90 backdrop-blur border border-slate-800 px-3 py-2 rounded-lg pointer-events-auto shadow-lg shadow-black/40">
-          <Compass className="w-5 h-5 text-emerald-400 animate-spin-slow" />
-          <div>
-            <div className="text-xs font-mono font-bold tracking-wider text-emerald-400">SECTOR 4 GRID (MGRS 43R EK)</div>
-            <div className="text-[10px] text-slate-400 font-mono">
-              GPS: {baseLat.toFixed(4)}°N, {baseLng.toFixed(4)}°E • ALT 2,420M
-            </div>
+    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="text-[11px] font-mono font-semibold text-blue-700 uppercase tracking-wider">
+            Geospatial Intelligence · Multi-Hop Topology
           </div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Tactical Map & GIS</h1>
+          <p className="text-slate-600 text-xs sm:text-sm mt-0.5">
+            Geospatial tracking of assets, muster callsigns, and mesh relay lines.
+          </p>
         </div>
 
-        {/* Map Layers & Zoom */}
-        <div className="flex items-center gap-2 pointer-events-auto">
-          <div className="bg-slate-900/90 backdrop-blur border border-slate-800 rounded-lg p-1 flex gap-1 shadow-lg">
-            <button
-              onClick={() => setMapMode('tactical')}
-              className={`px-3 py-1 text-xs rounded font-medium transition ${
-                mapMode === 'tactical' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Tactical
-            </button>
-            <button
-              onClick={() => setMapMode('topo')}
-              className={`px-3 py-1 text-xs rounded font-medium transition ${
-                mapMode === 'topo' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Topo
-            </button>
-            <button
-              onClick={() => setMapMode('grid')}
-              className={`px-3 py-1 text-xs rounded font-medium transition ${
-                mapMode === 'grid' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'
-              }`}
-            >
-              Grid
-            </button>
-          </div>
+        {/* Layer Toggles */}
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setShowAssets(!showAssets)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
+              showAssets
+                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                : 'bg-white text-slate-500 border-slate-200'
+            }`}
+          >
+            Assets ({assets.length})
+          </button>
+          <button
+            onClick={() => setShowIncidents(!showIncidents)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
+              showIncidents
+                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                : 'bg-white text-slate-500 border-slate-200'
+            }`}
+          >
+            Incidents ({incidents.length})
+          </button>
+          <button
+            onClick={() => setShowMeshLinks(!showMeshLinks)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition ${
+              showMeshLinks
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                : 'bg-white text-slate-500 border-slate-200'
+            }`}
+          >
+            Mesh Links ({peers.length})
+          </button>
+        </div>
+      </div>
 
-          <div className="bg-slate-900/90 backdrop-blur border border-slate-800 rounded-lg p-1 flex gap-1 shadow-lg">
+      {/* Map Container Card */}
+      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs relative">
+        {/* Canvas */}
+        <div
+          className="w-full h-[520px] cursor-grab active:cursor-grabbing relative overflow-hidden"
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+        >
+          <canvas ref={canvasRef} className="w-full h-full block" />
+
+          {/* Floating Zoom Controls */}
+          <div className="absolute right-4 bottom-4 flex flex-col space-y-1 bg-slate-900/80 backdrop-blur-xs p-1.5 rounded-xl border border-slate-700 shadow-lg">
             <button
-              onClick={() => setZoom((z) => Math.min(2.5, z + 0.2))}
-              className="p-1.5 hover:bg-slate-800 text-slate-300 rounded"
+              onClick={() => {
+                tacticalAudio.playClick();
+                setZoom((z) => Math.min(z + 0.25, 2.5));
+              }}
+              className="p-2 text-white hover:bg-slate-800 rounded-lg transition"
               title="Zoom In"
             >
               <ZoomIn className="w-4 h-4" />
             </button>
             <button
-              onClick={() => setZoom((z) => Math.max(0.5, z - 0.2))}
-              className="p-1.5 hover:bg-slate-800 text-slate-300 rounded"
+              onClick={() => {
+                tacticalAudio.playClick();
+                setZoom((z) => Math.max(z - 0.25, 0.5));
+              }}
+              className="p-2 text-white hover:bg-slate-800 rounded-lg transition"
               title="Zoom Out"
             >
               <ZoomOut className="w-4 h-4" />
             </button>
             <button
-              onClick={handleResetView}
-              className="p-1.5 hover:bg-slate-800 text-slate-300 rounded"
-              title="Recenter"
+              onClick={() => {
+                tacticalAudio.playClick();
+                setZoom(1);
+                setPan({ x: 0, y: 0 });
+              }}
+              className="p-2 text-white hover:bg-slate-800 rounded-lg transition"
+              title="Reset View"
             >
               <Crosshair className="w-4 h-4" />
             </button>
           </div>
-        </div>
-      </div>
 
-      {/* Main Interactive Map Area */}
-      <div
-        className="flex-1 w-full h-full cursor-grab active:cursor-grabbing relative"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-      >
-        <canvas ref={canvasRef} className="w-full h-full block" />
-
-        {/* DOM-rendered tactical markers for clickability */}
-        <div className="absolute inset-0 pointer-events-none">
-          {/* Active Incidents */}
-          {incidents.map((inc, i) => {
-            const angle = (i / Math.max(incidents.length, 1)) * Math.PI * 1.5 + 0.4;
-            const dist = 0.09 + (i % 2) * 0.05;
-            const scale = 1400 * zoom;
-            const cx = (canvasRef.current?.width || 800) / 2 + pan.x;
-            const cy = (canvasRef.current?.height || 600) / 2 + pan.y;
-            const left = cx + Math.cos(angle) * dist * scale;
-            const top = cy - Math.sin(angle) * dist * scale;
-
-            return (
-              <div
-                key={inc.id}
-                style={{ left: `${left}px`, top: `${top}px` }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedItem({ type: 'incident', data: inc });
-                }}
-                className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto cursor-pointer group"
-              >
-                <div className="relative">
-                  <div className="w-8 h-8 rounded-full bg-red-600/30 border-2 border-red-500 flex items-center justify-center text-red-300 animate-pulse group-hover:scale-125 transition">
-                    <AlertTriangle className="w-4 h-4" />
-                  </div>
-                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-0.5 bg-slate-900/90 border border-red-500/40 rounded text-[10px] font-mono text-red-200 whitespace-nowrap opacity-0 group-hover:opacity-100 transition">
-                    {(inc as any).title || inc.incidentCode} ({inc.severity})
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-
-          {/* Active Assets */}
-          {assets.map((asset, i) => {
-            const angle = (i / Math.max(assets.length, 1)) * Math.PI * 2;
-            const dist = 0.06 + (i % 3) * 0.03;
-            const scale = 1400 * zoom;
-            const cx = (canvasRef.current?.width || 800) / 2 + pan.x;
-            const cy = (canvasRef.current?.height || 600) / 2 + pan.y;
-            const left = cx + Math.sin(angle) * dist * scale;
-            const top = cy - Math.cos(angle) * dist * scale;
-
-            return (
-              <div
-                key={asset.id}
-                style={{ left: `${left}px`, top: `${top}px` }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedItem({ type: 'asset', data: asset });
-                }}
-                className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto cursor-pointer group"
-              >
-                <div className="relative">
-                  <div
-                    className={`w-7 h-7 rounded-lg flex items-center justify-center text-white border transition group-hover:scale-125 ${
-                      asset.status === 'Deployed' || (asset.status as string) === 'deployed'
-                        ? 'bg-amber-600/40 border-amber-400 text-amber-200'
-                        : 'bg-emerald-600/40 border-emerald-400 text-emerald-200'
-                    }`}
-                  >
-                    <Shield className="w-3.5 h-3.5" />
-                  </div>
-                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 px-2 py-0.5 bg-slate-900/90 border border-slate-700 rounded text-[10px] font-mono text-slate-200 whitespace-nowrap opacity-0 group-hover:opacity-100 transition">
-                    {asset.name}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Selected Marker Detail Drawer */}
-      {selectedItem && (
-        <div className="absolute bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-96 z-30 bg-slate-900/95 backdrop-blur-md border border-slate-800 rounded-xl p-4 shadow-2xl shadow-black/80 animate-in fade-in slide-in-from-bottom duration-200">
-          <div className="flex items-start justify-between gap-2 mb-2">
-            <div className="flex items-center gap-2">
-              {selectedItem.type === 'incident' ? (
-                <AlertTriangle className="w-5 h-5 text-red-400" />
-              ) : (
-                <Shield className="w-5 h-5 text-blue-400" />
-              )}
-              <h3 className="font-semibold text-sm text-slate-100">
-                {selectedItem.data.title || selectedItem.data.name}
-              </h3>
+          {/* Map Compass & Legend Indicator */}
+          <div className="absolute left-4 top-4 bg-slate-900/80 backdrop-blur-xs px-3 py-2 rounded-xl border border-slate-700 text-xs font-mono text-slate-300 space-y-1">
+            <div className="flex items-center space-x-1.5 text-emerald-400 font-bold">
+              <Compass className="w-4 h-4 animate-spin-slow" />
+              <span>SECTOR 4 GRID</span>
             </div>
-            <button
-              onClick={() => setSelectedItem(null)}
-              className="text-slate-400 hover:text-white text-xs px-2 py-1 rounded hover:bg-slate-800"
-            >
-              ✕
-            </button>
-          </div>
-
-          <div className="text-xs text-slate-300 space-y-1.5 font-mono">
-            {selectedItem.type === 'incident' && (
-              <>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Severity:</span>
-                  <span className="text-red-400 font-bold">{selectedItem.data.severity}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Status:</span>
-                  <span>{selectedItem.data.status}</span>
-                </div>
-                <div className="text-slate-300 mt-2 font-sans bg-slate-950/60 p-2 rounded border border-slate-800/80">
-                  {selectedItem.data.description}
-                </div>
-              </>
-            )}
-
-            {selectedItem.type === 'asset' && (
-              <>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Category:</span>
-                  <span>{selectedItem.data.category}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Condition:</span>
-                  <span className="text-emerald-400">{selectedItem.data.condition}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Status:</span>
-                  <span className="capitalize">{selectedItem.data.status}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Serial:</span>
-                  <span>{selectedItem.data.serialNumber || 'N/A'}</span>
-                </div>
-              </>
-            )}
+            <div className="text-[10px] text-slate-400">Coord: 32.149° N, 76.321° E</div>
           </div>
         </div>
-      )}
-
-      {/* Bottom Status Bar */}
-      <div className="bg-slate-900 border-t border-slate-800 px-4 py-2 flex items-center justify-between text-[11px] font-mono text-slate-400 z-20">
-        <div className="flex items-center gap-4">
-          <span className="flex items-center gap-1.5 text-emerald-400">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            OFFLINE GIS CACHE ACTIVE
-          </span>
-          <span>ASSETS: {assets.length}</span>
-          <span>ACTIVE HAZARDS: {incidents.length}</span>
-          <span>MESH PEERS: {peers.filter((p) => p.status === 'online').length}</span>
-        </div>
-        <div className="hidden sm:block">ZOOM: {(zoom * 100).toFixed(0)}%</div>
       </div>
     </div>
   );

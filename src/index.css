@@ -4,78 +4,78 @@
 
 @layer base {
   :root {
-    --bg-tactical: #0a0d0f;
-    --surface-tactical: #11161a;
-    --border-tactical: #232c35;
+    --bg-page: #f8fafc;
+    --surface-card: #ffffff;
+    --surface-muted: #f1f5f9;
+    --border-subtle: #e2e8f0;
+    --brand-primary: #1e3a8a;
+    --brand-accent: #2563eb;
+    --text-main: #0f172a;
+    --text-muted: #475569;
   }
 
   body {
-    @apply bg-[#0a0d0f] text-slate-200 antialiased selection:bg-[#ff5533]/30 selection:text-white;
+    @apply bg-[#f8fafc] text-slate-900 antialiased selection:bg-blue-600/20 selection:text-blue-900;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
     overflow-x: hidden;
+    touch-action: manipulation;
   }
 }
 
-/* Custom Tactical Scrollbars */
+/* Custom Eye-Soothing Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0d1114;
+  background: #f1f5f9;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #232c35;
-  border-radius: 3px;
+  background: #cbd5e1;
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #394754;
+  background: #94a3b8;
 }
 
-/* Tactical UI utilities */
-.tactical-border {
-  border: 1px solid #232c35;
+/* Operational Surface Classes */
+.field-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
+  transition: all 0.15s ease-in-out;
 }
 
-.tactical-panel {
-  background: #11161a;
-  border: 1px solid #232c35;
+.field-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.06), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
 }
 
-.tactical-card {
-  background: #161c22;
-  border: 1px solid #232c35;
-  transition: all 0.2s ease-in-out;
+.field-panel {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.5rem;
 }
 
-.tactical-card:hover {
-  border-color: #364452;
+.field-border {
+  border: 1px solid #e2e8f0;
 }
 
-.tactical-glow-orange {
-  box-shadow: 0 0 15px rgba(255, 85, 51, 0.2);
+/* Mobile 44px Minimum Touch Target Utility */
+.touch-target-min {
+  min-height: 44px;
+  min-width: 44px;
 }
 
-.tactical-glow-emerald {
-  box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);
-}
-
-.tactical-glow-cyan {
-  box-shadow: 0 0 15px rgba(6, 182, 212, 0.2);
-}
-
-/* Scanline and Grid effect */
-.tactical-grid-bg {
+/* Background Subtle Grid */
+.field-grid-bg {
   background-size: 32px 32px;
   background-image: 
-    linear-gradient(to right, rgba(35, 44, 53, 0.25) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(35, 44, 53, 0.25) 1px, transparent 1px);
+    linear-gradient(to right, rgba(226, 232, 240, 0.6) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(226, 232, 240, 0.6) 1px, transparent 1px);
 }
 
-.tactical-dot-bg {
-  background-size: 24px 24px;
-  background-image: radial-gradient(rgba(107, 125, 142, 0.2) 1px, transparent 1px);
-}

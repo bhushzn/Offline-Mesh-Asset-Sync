@@ -1,23 +1,25 @@
 // FIELDLINK Tactical Settings & Vault Recovery View
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Settings as SettingsIcon, 
   Download, 
   Upload, 
   Smartphone, 
   ShieldCheck, 
-  ShieldAlert, 
   Volume2, 
   VolumeX, 
   RefreshCcw, 
+  Battery, 
+  Wifi, 
   Radio, 
-  Lock, 
-  ChevronRight, 
-  Edit3 
+  Edit3,
+  CheckCircle2,
+  X
 } from 'lucide-react';
 import { DeviceMetadata } from '../../types/tactical';
 import { offlineStorage, STORES } from '../../services/offlineStorageService';
 import { seedDatabaseIfEmpty } from '../../services/seedData';
+import { batteryService, BatteryState } from '../../services/batteryService';
 import { tacticalAudio } from '../../utils/audio';
 
 interface Props {
@@ -37,11 +39,18 @@ export const SettingsView: React.FC<Props> = ({
   soundEnabled,
   setSoundEnabled,
 }) => {
-  const [rolePermissionsEnabled, setRolePermissionsEnabled] = useState(true);
   const [isEditIdentityOpen, setIsEditIdentityOpen] = useState(false);
   const [formDeviceName, setFormDeviceName] = useState(activeDevice.deviceName);
   const [formOperatorName, setFormOperatorName] = useState(activeDevice.operatorName);
   const [formRole, setFormRole] = useState(activeDevice.role);
+  const [batteryInfo, setBatteryInfo] = useState<BatteryState>(batteryService.getState());
+
+  useEffect(() => {
+    const unsub = batteryService.subscribe((status) => {
+      setBatteryInfo(status);
+    });
+    return () => unsub();
+  }, []);
 
   const handleExportSnapshot = async () => {
     tacticalAudio.playClick();
@@ -98,251 +107,250 @@ export const SettingsView: React.FC<Props> = ({
   };
 
   return (
-    <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
-      {/* Header Context */}
+    <div className="p-4 md:p-8 max-w-5xl mx-auto space-y-6">
+      {/* Header */}
       <div>
-        <div className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">
-          Device Configuration / {activeDevice.deviceId.replace('device-', '').toUpperCase()}
+        <div className="text-[11px] font-mono font-semibold text-blue-700 uppercase tracking-wider">
+          System Configuration · Local Vault
         </div>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-1">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-slate-100 font-sans">Settings</h1>
-            <p className="text-slate-400 text-xs sm:text-sm mt-0.5">
-              Control local behavior, recovery and field identity.
-            </p>
-          </div>
-        </div>
+        <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Settings & System</h1>
+        <p className="text-slate-600 text-xs sm:text-sm mt-0.5">
+          Device telemetry, hardware sensors, security keys, and local IndexedDB database management.
+        </p>
       </div>
 
-      {/* Two Columns Grid matching screenshot */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Left Column: Recovery & data */}
-        <div className="space-y-4">
-          <h3 className="text-sm font-bold font-mono text-slate-100 uppercase tracking-wider">
-            Recovery & data
-          </h3>
-
-          <div className="bg-[#11161a] border border-[#232c35] rounded-xl overflow-hidden divide-y divide-[#232c35]">
-            {/* Export local snapshot matching screenshot */}
-            <div
-              onClick={handleExportSnapshot}
-              className="p-4 flex items-center justify-between hover:bg-[#161c22] cursor-pointer transition group"
-            >
-              <div className="flex items-center space-x-3.5">
-                <div className="w-8 h-8 rounded bg-[#ff5533]/15 text-[#ff5533] flex items-center justify-center">
-                  <Download className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-100 font-mono group-hover:text-[#ff5533] transition">
-                    Export local snapshot
-                  </div>
-                  <div className="text-[11px] text-slate-400 font-sans">
-                    Portable encrypted recovery file
-                  </div>
-                </div>
+      {/* Grid of Settings Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+        {/* Node Identity Card */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div className="flex items-center space-x-2.5">
+              <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-700">
+                <Smartphone className="w-4 h-4" />
               </div>
-              <ChevronRight className="w-4 h-4 text-[#ff5533]" />
+              <div>
+                <h3 className="font-bold text-slate-900 text-sm">Local Node Identity</h3>
+                <div className="text-[10px] font-mono text-slate-500">Device ID & Role</div>
+              </div>
             </div>
 
-            {/* Import snapshot matching screenshot */}
-            <label className="p-4 flex items-center justify-between hover:bg-[#161c22] cursor-pointer transition group block">
-              <div className="flex items-center space-x-3.5">
-                <div className="w-8 h-8 rounded bg-cyan-950/60 text-cyan-400 flex items-center justify-center">
-                  <Upload className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-100 font-mono group-hover:text-cyan-300 transition">
-                    Import snapshot
-                  </div>
-                  <div className="text-[11px] text-slate-400 font-sans">
-                    Restore records from another device
-                  </div>
-                </div>
-              </div>
-              <input type="file" accept=".json" onChange={handleImportSnapshot} className="hidden" />
-              <ChevronRight className="w-4 h-4 text-slate-500" />
-            </label>
-
-            {/* Reset Database */}
-            <div
-              onClick={handleResetDatabase}
-              className="p-4 flex items-center justify-between hover:bg-[#161c22] cursor-pointer transition group"
-            >
-              <div className="flex items-center space-x-3.5">
-                <div className="w-8 h-8 rounded bg-amber-950/60 text-amber-400 flex items-center justify-center">
-                  <RefreshCcw className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-100 font-mono group-hover:text-amber-300 transition">
-                    Reset local database
-                  </div>
-                  <div className="text-[11px] text-slate-400 font-sans">
-                    Re-initialize demo dataset in IndexedDB
-                  </div>
-                </div>
-              </div>
-              <ChevronRight className="w-4 h-4 text-slate-500" />
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column: Device identity matching screenshot */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold font-mono text-slate-100 uppercase tracking-wider">
-              Device identity
-            </h3>
             <button
               onClick={() => {
                 tacticalAudio.playClick();
                 setIsEditIdentityOpen(true);
               }}
-              className="text-xs font-mono text-slate-400 hover:text-slate-200"
+              className="px-2.5 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-medium flex items-center space-x-1"
             >
-              Edit &gt;
+              <Edit3 className="w-3.5 h-3.5" />
+              <span>Edit</span>
             </button>
           </div>
 
-          <div className="bg-[#11161a] border border-[#232c35] rounded-xl p-5 space-y-4">
-            {/* Device ID Card matching screenshot */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3.5">
-                <div className="w-9 h-9 rounded bg-[#161c22] border border-[#232c35] flex items-center justify-center text-[#ff5533]">
-                  <Smartphone className="w-4 h-4" />
-                </div>
-                <div>
-                  <div className="text-sm font-bold text-slate-100 font-mono">{activeDevice.deviceName}</div>
-                  <div className="text-xs text-slate-400 font-mono">Operator: {activeDevice.operatorName}</div>
-                  <div className="text-[11px] text-slate-500 font-mono">Role: {activeDevice.role}</div>
-                </div>
-              </div>
-
-              <span className="px-2.5 py-0.5 rounded text-[10px] font-mono font-bold uppercase tracking-wider bg-emerald-950/70 text-emerald-400 border border-emerald-800">
-                TRUSTED
-              </span>
+          <div className="space-y-2.5 text-xs font-mono">
+            <div className="flex justify-between py-1 border-b border-slate-50">
+              <span className="text-slate-500">Device Name:</span>
+              <span className="font-bold text-slate-900">{activeDevice.deviceName}</span>
             </div>
+            <div className="flex justify-between py-1 border-b border-slate-50">
+              <span className="text-slate-500">Operator:</span>
+              <span className="font-bold text-slate-900">{activeDevice.operatorName}</span>
+            </div>
+            <div className="flex justify-between py-1 border-b border-slate-50">
+              <span className="text-slate-500">Tactical Role:</span>
+              <span className="font-bold text-blue-700">{activeDevice.role}</span>
+            </div>
+            <div className="flex justify-between py-1">
+              <span className="text-slate-500">Hardware UUID:</span>
+              <span className="font-mono text-slate-700 text-[10px] truncate max-w-[180px]">{activeDevice.deviceId}</span>
+            </div>
+          </div>
+        </div>
 
-            {/* Role-based permissions toggle matching screenshot */}
-            <div className="pt-4 border-t border-[#232c35] flex items-center justify-between">
-              <div className="flex items-center space-x-2.5">
-                <ShieldCheck className="w-4 h-4 text-[#ff5533]" />
-                <div>
-                  <div className="text-xs font-bold text-slate-200 font-mono">Role-based permissions</div>
-                  <div className="text-[11px] text-slate-400 font-sans">Field lead · full local access</div>
-                </div>
-              </div>
-
-              <button
-                onClick={() => {
-                  tacticalAudio.playClick();
-                  setRolePermissionsEnabled(!rolePermissionsEnabled);
-                }}
-                className={`w-11 h-6 flex items-center rounded-full p-1 transition duration-300 ${
-                  rolePermissionsEnabled ? 'bg-emerald-500' : 'bg-[#232c35]'
-                }`}
-              >
-                <div
-                  className={`bg-slate-900 w-4 h-4 rounded-full shadow-md transform transition duration-300 ${
-                    rolePermissionsEnabled ? 'translate-x-5' : 'translate-x-0'
-                  }`}
-                />
-              </button>
+        {/* Battery & Power Telemetry Card */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+          <div className="flex items-center space-x-2.5 pb-3 border-b border-slate-100">
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700">
+              <Battery className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-900 text-sm">Power & Battery Status</h3>
+              <div className="text-[10px] font-mono text-slate-500">Battery Status API Monitor</div>
             </div>
           </div>
 
-          {/* Network Simulator Controls */}
-          <div className="bg-[#11161a] border border-[#232c35] rounded-xl p-5 space-y-3">
-            <h4 className="text-xs font-bold font-mono text-slate-200 uppercase tracking-wider">
-              Tactical Network Isolation Simulator
-            </h4>
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => {
-                  tacticalAudio.playClick();
-                  setIsOnline(true);
-                }}
-                className={`px-3 py-1.5 rounded text-xs font-mono font-bold transition flex items-center space-x-1.5 ${
-                  isOnline
-                    ? 'bg-emerald-950/80 text-emerald-300 border border-emerald-700'
-                    : 'bg-[#161c22] text-slate-400 border border-[#232c35]'
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-600">Charge Level:</span>
+              <span className="text-base font-bold font-mono text-slate-900">{Math.round(batteryInfo.level * 100)}%</span>
+            </div>
+            <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+              <div
+                className={`h-full transition-all ${
+                  batteryInfo.level > 0.4 ? 'bg-emerald-500' : batteryInfo.level > 0.2 ? 'bg-amber-500' : 'bg-rose-500'
                 }`}
-              >
-                <Radio className="w-3.5 h-3.5" />
-                <span>Simulate Online (Gateway Link)</span>
-              </button>
-              <button
-                onClick={() => {
-                  tacticalAudio.playClick();
-                  setIsOnline(false);
-                }}
-                className={`px-3 py-1.5 rounded text-xs font-mono font-bold transition flex items-center space-x-1.5 ${
-                  !isOnline
-                    ? 'bg-amber-950/80 text-amber-300 border border-amber-700'
-                    : 'bg-[#161c22] text-slate-400 border border-[#232c35]'
-                }`}
-              >
-                <Lock className="w-3.5 h-3.5" />
-                <span>Simulate Zero-Bandwidth Offline</span>
-              </button>
+                style={{ width: `${Math.round(batteryInfo.level * 100)}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-xs font-mono text-slate-500 pt-1">
+              <span>Status: {batteryInfo.charging ? 'Charging' : 'Discharging'}</span>
+              <span className={batteryInfo.isLowPowerMode ? 'text-amber-700 font-semibold' : 'text-emerald-700'}>
+                {batteryInfo.isLowPowerMode ? 'Low-Power Throttled' : 'Full Power Mesh'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Tactical Audio & Alerts Card */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+          <div className="flex items-center space-x-2.5 pb-3 border-b border-slate-100">
+            <div className="w-8 h-8 rounded-lg bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-700">
+              {soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-900 text-sm">Tactical Audio Cues</h3>
+              <div className="text-[10px] font-mono text-slate-500">Synthetic Web Audio Synthesizer</div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-xs text-slate-700">Sound Effects:</span>
+            <button
+              onClick={() => {
+                const next = !soundEnabled;
+                setSoundEnabled(next);
+                if (next) tacticalAudio.playClick();
+              }}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition touch-target-min ${
+                soundEnabled
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {soundEnabled ? 'Enabled' : 'Muted'}
+            </button>
+          </div>
+        </div>
+
+        {/* Security & Cryptographic Vault Card */}
+        <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+          <div className="flex items-center space-x-2.5 pb-3 border-b border-slate-100">
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700">
+              <ShieldCheck className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-900 text-sm">Security & Encryption</h3>
+              <div className="text-[10px] font-mono text-slate-500">Web Crypto API</div>
+            </div>
+          </div>
+
+          <div className="space-y-2 text-xs font-mono text-slate-600">
+            <div className="flex justify-between">
+              <span>Cipher:</span>
+              <span className="font-bold text-slate-900">AES-GCM 256-bit</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Integrity:</span>
+              <span className="font-bold text-slate-900">SHA-256 Hashes</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Clock Synced:</span>
+              <span className="font-bold text-emerald-700">Hybrid Logical Clocks (HLC)</span>
             </div>
           </div>
         </div>
       </div>
 
+      {/* Vault Backup & Maintenance Strip */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+        <h3 className="font-bold text-slate-900 text-base">Vault Database Backup & Recovery</h3>
+        <p className="text-xs text-slate-600">
+          Export full offline state (Assets, Personnel, Incidents, Checklists, Audit Logs) to an encrypted JSON backup or restore a previous snapshot.
+        </p>
+
+        <div className="flex flex-wrap items-center gap-3 pt-2">
+          <button
+            onClick={handleExportSnapshot}
+            className="px-4 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition flex items-center space-x-2 shadow-xs touch-target-min"
+          >
+            <Download className="w-4 h-4" />
+            <span>Export Vault JSON</span>
+          </button>
+
+          <label className="px-4 py-2.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-semibold transition flex items-center space-x-2 cursor-pointer shadow-xs touch-target-min">
+            <Upload className="w-4 h-4 text-slate-500" />
+            <span>Import Snapshot</span>
+            <input type="file" accept=".json" onChange={handleImportSnapshot} className="hidden" />
+          </label>
+
+          <button
+            onClick={handleResetDatabase}
+            className="px-4 py-2.5 rounded-lg bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-700 text-xs font-semibold transition flex items-center space-x-2 shadow-xs touch-target-min"
+          >
+            <RefreshCcw className="w-4 h-4" />
+            <span>Factory Reset Database</span>
+          </button>
+        </div>
+      </div>
+
       {/* Edit Identity Modal */}
       {isEditIdentityOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-[#11161a] border border-[#232c35] rounded-xl p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-[#232c35] pb-3">
-              <h3 className="text-base font-bold text-slate-100 font-mono">Edit Device Identity</h3>
-              <button onClick={() => setIsEditIdentityOpen(false)} className="text-slate-400 hover:text-white">✕</button>
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5 animate-in fade-in">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <h3 className="font-bold text-slate-900 text-base">Edit Node Identity</h3>
+              <button
+                onClick={() => setIsEditIdentityOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            <form onSubmit={handleSaveIdentity} className="space-y-3 text-xs font-mono">
+            <form onSubmit={handleSaveIdentity} className="space-y-4">
               <div>
-                <label className="text-slate-400 block mb-1">Device Node Name</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Device Name</label>
                 <input
                   type="text"
                   required
                   value={formDeviceName}
                   onChange={(e) => setFormDeviceName(e.target.value)}
-                  className="w-full bg-[#161c22] border border-[#232c35] rounded p-2 text-slate-100"
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
 
               <div>
-                <label className="text-slate-400 block mb-1">Operator Name</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Operator Name</label>
                 <input
                   type="text"
                   required
                   value={formOperatorName}
                   onChange={(e) => setFormOperatorName(e.target.value)}
-                  className="w-full bg-[#161c22] border border-[#232c35] rounded p-2 text-slate-100"
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
 
               <div>
-                <label className="text-slate-400 block mb-1">Assigned Tactical Role</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Tactical Role</label>
                 <input
                   type="text"
                   required
                   value={formRole}
                   onChange={(e) => setFormRole(e.target.value)}
-                  className="w-full bg-[#161c22] border border-[#232c35] rounded p-2 text-slate-100"
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
 
-              <div className="flex justify-end space-x-2 pt-3 border-t border-[#232c35]">
+              <div className="flex items-center justify-end space-x-3 pt-3 border-t border-slate-200">
                 <button
                   type="button"
                   onClick={() => setIsEditIdentityOpen(false)}
-                  className="px-3 py-1.5 rounded bg-[#161c22] text-slate-300"
+                  className="px-4 py-2 rounded-lg text-slate-600 hover:text-slate-800 text-xs font-medium"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 rounded bg-[#ff5533] text-white font-semibold"
+                  className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-xs"
                 >
                   Save Identity
                 </button>

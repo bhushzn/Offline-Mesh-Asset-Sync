@@ -5,11 +5,11 @@ import {
   Plus, 
   CheckCircle2, 
   Clock, 
-  MoreHorizontal, 
-  ChevronRight, 
-  Sliders, 
   RotateCcw,
-  Check
+  Check,
+  ChevronRight,
+  Sliders,
+  X
 } from 'lucide-react';
 import { ChecklistExecution, ChecklistCategory, ChecklistItem } from '../../types/tactical';
 import { offlineStorage, STORES } from '../../services/offlineStorageService';
@@ -24,7 +24,7 @@ export const ChecklistsView: React.FC = () => {
   // New checklist form
   const [newTitle, setNewTitle] = useState('');
   const [newCategory, setNewCategory] = useState<ChecklistCategory>('Equipment Inspection');
-  const [rawItems, setRawItems] = useState('Check primary comms\nVerify GPS coordinates\nCheck battery level\nInspect antenna');
+  const [rawItems, setRawItems] = useState('Check primary HF/VHF radio comms\nVerify GPS coordinates and compass heading\nInspect vehicle battery voltage (>12.6V)\nVerify trauma kit seal integrity');
 
   useEffect(() => {
     loadChecklists();
@@ -37,6 +37,12 @@ export const ChecklistsView: React.FC = () => {
   const loadChecklists = async () => {
     const list = await offlineStorage.getAll<ChecklistExecution>(STORES.CHECKLISTS);
     setChecklists(list);
+    if (!activeChecklist && list.length > 0) {
+      setActiveChecklist(list[0]);
+    } else if (activeChecklist) {
+      const updated = list.find((c) => c.id === activeChecklist.id);
+      if (updated) setActiveChecklist(updated);
+    }
   };
 
   const handleToggleItem = async (checklistId: string, itemId: string) => {
@@ -70,7 +76,7 @@ export const ChecklistsView: React.FC = () => {
       updatedAt: Date.now(),
       updatedByDeviceId: syncQueue.getDeviceId(),
       version: target.version + 1,
-      lamportClock: syncQueue.advanceClock(),
+      lamportClock: syncQueue.advanceClock().lamport,
       syncStatus: 'pending',
     };
 
@@ -83,6 +89,35 @@ export const ChecklistsView: React.FC = () => {
     }
   };
 
+  const handleResetChecklist = async (checklist: ChecklistExecution) => {
+    tacticalAudio.playClick();
+    const resetItems = checklist.items.map((i) => ({
+      ...i,
+      completed: false,
+      completedBy: undefined,
+      completedAt: undefined,
+    }));
+
+    const updatedChecklist: ChecklistExecution = {
+      ...checklist,
+      items: resetItems,
+      progress: {
+        completed: 0,
+        total: resetItems.length,
+      },
+      status: 'In Progress',
+      updatedAt: Date.now(),
+      updatedByDeviceId: syncQueue.getDeviceId(),
+      version: checklist.version + 1,
+      lamportClock: syncQueue.advanceClock().lamport,
+      syncStatus: 'pending',
+    };
+
+    await offlineStorage.put(STORES.CHECKLISTS, updatedChecklist);
+    await syncQueue.enqueueMutation('checklist', checklist.id, 'UPDATE', updatedChecklist);
+    setActiveChecklist(updatedChecklist);
+  };
+
   const handleCreateChecklist = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle.trim()) return;
@@ -90,238 +125,273 @@ export const ChecklistsView: React.FC = () => {
     tacticalAudio.playClick();
     const parsedItems: ChecklistItem[] = rawItems
       .split('\n')
-      .filter((line) => line.trim().length > 0)
-      .map((line, idx) => ({
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .map((text, idx) => ({
         id: `item-${Date.now()}-${idx}`,
-        label: line.trim(),
+        label: text,
         completed: false,
       }));
 
-    const newExec: ChecklistExecution = {
+    const newChecklist: ChecklistExecution = {
       id: `chk-${Date.now()}`,
       title: newTitle,
       category: newCategory,
       status: 'In Progress',
       items: parsedItems,
-      progress: { completed: 0, total: parsedItems.length },
+      progress: {
+        completed: 0,
+        total: parsedItems.length,
+      },
       updatedAt: Date.now(),
       updatedByDeviceId: syncQueue.getDeviceId(),
       version: 1,
-      lamportClock: syncQueue.advanceClock(),
+      lamportClock: syncQueue.advanceClock().lamport,
       syncStatus: 'pending',
     };
 
-    await offlineStorage.put(STORES.CHECKLISTS, newExec);
-    await syncQueue.enqueueMutation('checklist', newExec.id, 'CREATE', newExec);
+    await offlineStorage.put(STORES.CHECKLISTS, newChecklist);
+    await syncQueue.enqueueMutation('checklist', newChecklist.id, 'CREATE', newChecklist);
 
     setIsNewModalOpen(false);
     setNewTitle('');
+    setActiveChecklist(newChecklist);
     tacticalAudio.playSyncSuccess();
   };
 
-  const getCategoryTagStyle = (cat: ChecklistCategory) => {
-    switch (cat) {
-      case 'Equipment Inspection':
-        return 'bg-emerald-950/70 text-emerald-400 border border-emerald-800/80';
-      case 'Deployment Prep':
-        return 'bg-amber-950/70 text-amber-400 border border-amber-800/80';
-      case 'Emergency Response':
-        return 'bg-[#ff5533]/20 text-[#ff5533] border border-[#ff5533]/40';
-      default:
-        return 'bg-cyan-950/70 text-cyan-400 border border-cyan-800/80';
-    }
-  };
-
-  const formatUpdated = (time: number, device: string) => {
-    const d = new Date(time);
-    return `Updated ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · Device ${device.replace('device-', '').toUpperCase()}`;
-  };
+  const totalChecklists = checklists.length;
+  const completedChecklists = checklists.filter((c) => c.status === 'Completed').length;
+  const inProgressChecklists = checklists.filter((c) => c.status === 'In Progress').length;
 
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
-      {/* Header Context */}
-      <div>
-        <div className="text-[10px] font-mono text-slate-500 uppercase tracking-widest">
-          Local Data Store / IndexedDB
-        </div>
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-1">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-slate-100 font-sans">Checklists</h1>
-            <p className="text-slate-400 text-xs sm:text-sm mt-0.5">
-              Operational checks that survive every handoff and outage.
-            </p>
+      {/* Header & Create Button */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="text-[11px] font-mono font-semibold text-blue-700 uppercase tracking-wider">
+            Operational Procedures · Deterministic CRDT
           </div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">Tactical Checklists</h1>
+          <p className="text-slate-600 text-xs sm:text-sm mt-0.5">
+            Mission pre-flight verifications, maintenance protocols, and safety compliance.
+          </p>
+        </div>
 
-          <button
-            onClick={() => {
-              tacticalAudio.playClick();
-              setIsNewModalOpen(true);
-            }}
-            className="px-4 py-2 rounded-md bg-[#ff5533] hover:bg-[#e64422] text-white font-semibold text-xs sm:text-sm transition flex items-center justify-center space-x-1.5 shadow-tactical-glow self-start sm:self-auto"
-          >
-            <Plus className="w-4 h-4" />
-            <span>New checklist</span>
-          </button>
+        <button
+          onClick={() => {
+            tacticalAudio.playClick();
+            setIsNewModalOpen(true);
+          }}
+          className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs sm:text-sm transition flex items-center space-x-1.5 shadow-xs touch-target-min"
+        >
+          <Plus className="w-4 h-4" />
+          <span>New Checklist</span>
+        </button>
+      </div>
+
+      {/* Metrics Strip */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
+          <div className="text-[10px] uppercase font-mono font-semibold text-slate-500">Total Checklists</div>
+          <div className="text-xl font-bold text-slate-900 mt-1 font-mono">{totalChecklists}</div>
+        </div>
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
+          <div className="text-[10px] uppercase font-mono font-semibold text-blue-700">In Progress</div>
+          <div className="text-xl font-bold text-blue-700 mt-1 font-mono">{inProgressChecklists}</div>
+        </div>
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
+          <div className="text-[10px] uppercase font-mono font-semibold text-emerald-700">Completed</div>
+          <div className="text-xl font-bold text-emerald-700 mt-1 font-mono">{completedChecklists}</div>
         </div>
       </div>
 
-      {/* Checklist Cards Grid matching screenshot */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {checklists.map((chk) => {
-          const pct = Math.round((chk.progress.completed / chk.progress.total) * 100) || 0;
-          return (
-            <div
-              key={chk.id}
-              onClick={() => {
-                tacticalAudio.playClick();
-                setActiveChecklist(chk);
-              }}
-              className="bg-[#11161a] border border-[#232c35] hover:border-[#394754] rounded-xl p-5 flex flex-col justify-between cursor-pointer transition-all group space-y-5"
-            >
-              <div>
-                <div className="flex items-center justify-between">
-                  <span
-                    className={`text-[9px] font-mono uppercase font-bold tracking-wider px-2 py-0.5 rounded ${getCategoryTagStyle(
-                      chk.category
-                    )}`}
-                  >
-                    {chk.category.toUpperCase()}
-                  </span>
-                  <span className="text-slate-500 text-xs font-mono">•••</span>
-                </div>
-
-                <div className="mt-4">
-                  <h3 className="text-base font-bold text-slate-100 font-sans group-hover:text-cyan-300 transition">
-                    {chk.title}
-                  </h3>
-                  <div className="text-[10px] font-mono text-slate-400 mt-1">
-                    {formatUpdated(chk.updatedAt, chk.updatedByDeviceId)}
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                {/* Progress bar and numeric counter matching screenshot */}
-                <div className="space-y-1.5">
-                  <div className="flex justify-end">
-                    <span className="text-xs font-mono font-bold text-slate-300">
-                      {chk.progress.completed}/{chk.progress.total}
-                    </span>
-                  </div>
-                  <div className="w-full bg-[#0d1114] h-1.5 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-emerald-400 transition-all duration-300"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                </div>
-
-                {/* Continue checklist footer matching screenshot */}
-                <div className="flex items-center space-x-1 text-xs font-mono text-slate-400 group-hover:text-slate-200 transition pt-1">
-                  <span>Continue checklist</span>
-                  <span>&gt;</span>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Interactive Checklist Runner Modal */}
-      {activeChecklist && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
-          <div className="w-full max-w-xl bg-[#11161a] border border-[#232c35] rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-5 border-b border-[#232c35] bg-[#161c22] flex items-center justify-between">
-              <div>
-                <span className={`text-[9px] font-mono uppercase font-bold tracking-wider px-2 py-0.5 rounded ${getCategoryTagStyle(activeChecklist.category)}`}>
-                  {activeChecklist.category}
-                </span>
-                <h3 className="text-base font-bold text-slate-100 font-sans mt-1">{activeChecklist.title}</h3>
-                <div className="text-[10px] font-mono text-slate-400">
-                  {activeChecklist.progress.completed} of {activeChecklist.progress.total} steps completed
-                </div>
-              </div>
-              <button onClick={() => setActiveChecklist(null)} className="text-slate-400 hover:text-white">✕</button>
-            </div>
-
-            {/* Checklist Items list with tap-to-complete */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
-              {activeChecklist.items.map((item, index) => (
+      {/* Split View: List on left / Active Execution on right */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left Column: All Checklists */}
+        <div className="lg:col-span-5 space-y-3">
+          <h2 className="text-xs font-mono font-semibold uppercase tracking-wider text-slate-500">
+            Available Protocols ({checklists.length})
+          </h2>
+          <div className="space-y-2.5">
+            {checklists.map((chk) => {
+              const isSelected = activeChecklist?.id === chk.id;
+              const percent = Math.round((chk.progress.completed / (chk.progress.total || 1)) * 100);
+              return (
                 <div
-                  key={item.id}
-                  onClick={() => handleToggleItem(activeChecklist.id, item.id)}
-                  className={`p-3.5 rounded-lg border transition cursor-pointer flex items-start space-x-3 select-none ${
-                    item.completed
-                      ? 'bg-emerald-950/20 border-emerald-800/50 text-slate-200'
-                      : 'bg-[#161c22] border-[#232c35] text-slate-300 hover:border-[#394754]'
+                  key={chk.id}
+                  onClick={() => {
+                    tacticalAudio.playClick();
+                    setActiveChecklist(chk);
+                  }}
+                  className={`p-4 rounded-xl border transition cursor-pointer space-y-2 shadow-xs ${
+                    isSelected
+                      ? 'bg-blue-50/50 border-blue-500 ring-1 ring-blue-500/20'
+                      : 'bg-white border-slate-200 hover:border-slate-300'
                   }`}
                 >
-                  <div
-                    className={`w-5 h-5 rounded mt-0.5 flex items-center justify-center flex-shrink-0 transition-colors ${
-                      item.completed ? 'bg-emerald-500 text-slate-900' : 'border border-[#394754] bg-[#0d1114]'
-                    }`}
-                  >
-                    {item.completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="font-semibold text-slate-900 text-sm">{chk.title}</div>
+                      <div className="text-[11px] text-slate-500">{chk.category}</div>
+                    </div>
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold font-mono uppercase ${
+                        chk.status === 'Completed'
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-blue-50 text-blue-700 border border-blue-200'
+                      }`}
+                    >
+                      {chk.status}
+                    </span>
                   </div>
 
-                  <div className="flex-1">
-                    <div className={`text-xs font-mono ${item.completed ? 'line-through text-slate-400' : 'text-slate-200'}`}>
-                      <span className="text-slate-500 mr-2">{index + 1}.</span>
-                      {item.label}
+                  {/* Progress Bar */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-[10px] font-mono text-slate-500">
+                      <span>{chk.progress.completed}/{chk.progress.total} Steps</span>
+                      <span>{percent}%</span>
                     </div>
-                    {item.completed && item.completedBy && (
-                      <div className="text-[9px] font-mono text-emerald-400/80 mt-1">
-                        Verified by Node {item.completedBy.replace('device-', '').toUpperCase()}
-                      </div>
-                    )}
+                    <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className={`h-full transition-all duration-300 ${
+                          chk.status === 'Completed' ? 'bg-emerald-500' : 'bg-blue-600'
+                        }`}
+                        style={{ width: `${percent}%` }}
+                      />
+                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
-
-            <div className="p-4 border-t border-[#232c35] bg-[#0d1114] flex items-center justify-between">
-              <div className="text-xs font-mono text-slate-400">
-                Lamport Clock: <span className="text-cyan-400 font-bold">{activeChecklist.lamportClock}</span>
-              </div>
-              <button
-                onClick={() => setActiveChecklist(null)}
-                className="px-4 py-1.5 rounded bg-[#ff5533] text-white font-bold text-xs font-mono shadow-tactical-glow"
-              >
-                Close & Sync Delta
-              </button>
-            </div>
+              );
+            })}
           </div>
         </div>
-      )}
 
-      {/* New Checklist Creator Modal */}
+        {/* Right Column: Active Checklist Interactive Sheet */}
+        <div className="lg:col-span-7">
+          {activeChecklist ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs space-y-5">
+              <div className="flex items-start justify-between pb-4 border-b border-slate-100">
+                <div>
+                  <div className="text-[10px] font-mono uppercase font-semibold text-blue-700">Protocol Execution</div>
+                  <h2 className="text-xl font-bold text-slate-900">{activeChecklist.title}</h2>
+                  <div className="text-xs text-slate-500 mt-0.5">{activeChecklist.category}</div>
+                </div>
+
+                <button
+                  onClick={() => handleResetChecklist(activeChecklist)}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-xs font-medium flex items-center space-x-1.5 touch-target-min"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset</span>
+                </button>
+              </div>
+
+              {/* Progress summary banner */}
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between text-xs font-mono font-semibold">
+                  <span className="text-slate-700">Completion Status</span>
+                  <span className={activeChecklist.status === 'Completed' ? 'text-emerald-700' : 'text-blue-700'}>
+                    {activeChecklist.progress.completed} of {activeChecklist.progress.total} Complete (
+                    {Math.round((activeChecklist.progress.completed / (activeChecklist.progress.total || 1)) * 100)}%)
+                  </span>
+                </div>
+                <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                  <div
+                    className={`h-full transition-all duration-300 ${
+                      activeChecklist.status === 'Completed' ? 'bg-emerald-500' : 'bg-blue-600'
+                    }`}
+                    style={{
+                      width: `${Math.round((activeChecklist.progress.completed / (activeChecklist.progress.total || 1)) * 100)}%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Interactive Checklist Item Rows (44px min touch target) */}
+              <div className="space-y-2">
+                {activeChecklist.items.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleToggleItem(activeChecklist.id, item.id)}
+                    className={`w-full text-left p-3.5 rounded-xl border transition flex items-center space-x-3.5 touch-target-min ${
+                      item.completed
+                        ? 'bg-emerald-50/50 border-emerald-200'
+                        : 'bg-white border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div
+                      className={`w-6 h-6 rounded-lg flex items-center justify-center border transition flex-shrink-0 ${
+                        item.completed
+                          ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
+                          : 'border-slate-300 bg-white'
+                      }`}
+                    >
+                      {item.completed && <Check className="w-4 h-4 stroke-[3]" />}
+                    </div>
+
+                    <div className="flex-1">
+                      <span
+                        className={`text-xs sm:text-sm font-medium ${
+                          item.completed ? 'text-slate-500 line-through' : 'text-slate-900'
+                        }`}
+                      >
+                        {item.label}
+                      </span>
+                      {item.completed && (
+                        <div className="text-[10px] text-emerald-700 font-mono mt-0.5">
+                          Verified by {item.completedBy || 'Operator'}
+                        </div>
+                      )}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white border border-slate-200 rounded-xl p-12 text-center text-slate-500 text-xs font-mono">
+              Select a checklist from the list to view and verify items.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* New Checklist Modal */}
       {isNewModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm">
-          <div className="w-full max-w-md bg-[#11161a] border border-[#232c35] rounded-xl p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-[#232c35] pb-3">
-              <h3 className="text-base font-bold text-slate-100 font-mono">Create Tactical Checklist</h3>
-              <button onClick={() => setIsNewModalOpen(false)} className="text-slate-400 hover:text-white">✕</button>
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5 animate-in fade-in">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <div>
+                <div className="text-[10px] font-mono uppercase font-semibold text-blue-700">New Operational Protocol</div>
+                <h2 className="font-bold text-slate-900 text-lg">Create Tactical Checklist</h2>
+              </div>
+              <button
+                onClick={() => setIsNewModalOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            <form onSubmit={handleCreateChecklist} className="space-y-3 text-xs font-mono">
+            <form onSubmit={handleCreateChecklist} className="space-y-4">
               <div>
-                <label className="text-slate-400 block mb-1">Checklist Title</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Checklist Title</label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Night Recon Protocol"
+                  placeholder="e.g. Night Patrol Readiness Check"
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
-                  className="w-full bg-[#161c22] border border-[#232c35] rounded p-2 text-slate-100 focus:outline-none focus:border-[#ff5533]"
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
 
               <div>
-                <label className="text-slate-400 block mb-1">Category</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Category</label>
                 <select
                   value={newCategory}
-                  onChange={(e) => setNewCategory(e.target.value as any)}
-                  className="w-full bg-[#161c22] border border-[#232c35] rounded p-2 text-slate-100 focus:outline-none"
+                  onChange={(e) => setNewCategory(e.target.value as ChecklistCategory)}
+                  className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 >
                   <option value="Equipment Inspection">Equipment Inspection</option>
                   <option value="Deployment Prep">Deployment Prep</option>
@@ -332,29 +402,31 @@ export const ChecklistsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="text-slate-400 block mb-1">Checklist Steps (1 per line)</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Verification Items (one per line)
+                </label>
                 <textarea
                   rows={4}
                   required
                   value={rawItems}
                   onChange={(e) => setRawItems(e.target.value)}
-                  className="w-full bg-[#161c22] border border-[#232c35] rounded p-2 text-slate-100"
+                  className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-mono"
                 />
               </div>
 
-              <div className="flex justify-end space-x-2 pt-3 border-t border-[#232c35]">
+              <div className="flex items-center justify-end space-x-3 pt-3 border-t border-slate-200">
                 <button
                   type="button"
                   onClick={() => setIsNewModalOpen(false)}
-                  className="px-3 py-1.5 rounded bg-[#161c22] text-slate-300"
+                  className="px-4 py-2 rounded-lg text-slate-600 hover:text-slate-800 text-xs font-medium"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 rounded bg-[#ff5533] text-white font-semibold"
+                  className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium shadow-xs touch-target-min"
                 >
-                  Create & Save
+                  Create Protocol
                 </button>
               </div>
             </form>

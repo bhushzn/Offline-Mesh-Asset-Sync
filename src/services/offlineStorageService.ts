@@ -12,7 +12,7 @@ import {
 } from '../types/tactical';
 
 const DB_NAME = 'fieldlink_tactical_db';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export const STORES = {
   USERS: 'users',
@@ -26,6 +26,8 @@ export const STORES = {
   SYNC_QUEUE: 'sync_queue',
   CRDT_OPS: 'crdt_ops',
   DEVICE_METADATA: 'device_metadata',
+  AUDIT_LOGS: 'audit_logs',
+  CONFLICT_LOGS: 'conflict_logs',
 } as const;
 
 type StoreName = typeof STORES[keyof typeof STORES];
@@ -37,7 +39,7 @@ class OfflineStorageService {
   private listeners: Set<ListenerCallback> = new Set();
 
   constructor() {
-    this.initDB();
+    this.initDB().catch(() => {});
   }
 
   public async getDB(): Promise<IDBDatabase> {
@@ -49,6 +51,9 @@ class OfflineStorageService {
 
   private initDB(): Promise<IDBDatabase> {
     this.dbPromise = new Promise((resolve, reject) => {
+      if (typeof indexedDB === 'undefined') {
+        return reject(new Error('IndexedDB not supported in this environment'));
+      }
       const request = indexedDB.open(DB_NAME, DB_VERSION);
 
       request.onupgradeneeded = (event) => {
@@ -126,6 +131,19 @@ class OfflineStorageService {
         // Users store
         if (!db.objectStoreNames.contains(STORES.USERS)) {
           db.createObjectStore(STORES.USERS, { keyPath: 'id' });
+        }
+
+        // Audit Logs store
+        if (!db.objectStoreNames.contains(STORES.AUDIT_LOGS)) {
+          const store = db.createObjectStore(STORES.AUDIT_LOGS, { keyPath: 'id' });
+          store.createIndex('timestamp', 'timestamp', { unique: false });
+          store.createIndex('severity', 'severity', { unique: false });
+        }
+
+        // Conflict Logs store
+        if (!db.objectStoreNames.contains(STORES.CONFLICT_LOGS)) {
+          const store = db.createObjectStore(STORES.CONFLICT_LOGS, { keyPath: 'conflictId' });
+          store.createIndex('resolvedAt', 'resolvedAt', { unique: false });
         }
       };
 

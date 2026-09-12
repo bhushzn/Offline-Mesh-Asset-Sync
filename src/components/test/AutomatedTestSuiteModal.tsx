@@ -256,15 +256,16 @@ export const AutomatedTestSuiteModal: React.FC<Props> = ({ isOpen, onClose }) =>
           payload: { name: 'Fixed' },
           vectorClock: { 'device-a17': 1 },
           lamportClock: 5,
+          hlcTimestamp: '5000:0:device-a17',
           timestamp: 5000,
           originDeviceId: 'device-a17',
           syncedWithPeers: [],
         };
-        const hash1 = CRDTEngine.computeOpHash(dummyOp);
-        const hash2 = CRDTEngine.computeOpHash(dummyOp);
-        if (hash1 === hash2 && hash1.startsWith('h_')) {
+        const hash1 = await CRDTEngine.computeOpHash(dummyOp);
+        const hash2 = await CRDTEngine.computeOpHash(dummyOp);
+        if (hash1 === hash2 && hash1.length > 0) {
           passed = true;
-          details = `Deterministic hash ${hash1} verified for duplicate suppression and replay protection.`;
+          details = `Deterministic hash ${hash1.slice(0, 16)}... verified for duplicate suppression and replay protection.`;
         } else {
           details = 'Hash computation non-deterministic.';
         }

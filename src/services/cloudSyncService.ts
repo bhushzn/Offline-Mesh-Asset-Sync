@@ -187,6 +187,7 @@ class CloudSyncService {
             payload: remoteOp.data,
             vectorClock: { [remoteOp.deviceId]: 1 },
             lamportClock: 1,
+            hlcTimestamp: remoteOp.hlcTimestamp || `${Date.now()}:0:${remoteOp.deviceId}`,
             timestamp: Date.now(),
             originDeviceId: remoteOp.deviceId,
             syncedWithPeers: [deviceId],
@@ -226,6 +227,10 @@ class CloudSyncService {
       this.isSyncing = false;
       this.notify();
     }
+  }
+
+  public async triggerSync(): Promise<CloudSyncResult> {
+    return this.syncWithCloud();
   }
 
   /**
