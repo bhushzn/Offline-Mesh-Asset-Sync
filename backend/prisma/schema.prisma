@@ -1,0 +1,485 @@
+// ============================================================
+// TacSync — Prisma Schema
+// Zero-Bandwidth Tactical Asset & Checklist Sync
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────
+
+enum Role {
+  ADMIN
+  COMMANDER
+  TEAM_LEADER
+  FIELD_OPERATOR
+  VIEWER
+}
+
+enum DeviceStatus {
+  ACTIVE
+  INACTIVE
+  DECOMMISSIONED
+}
+
+enum PersonnelStatus {
+  ACTIVE
+  INACTIVE
+  ON_LEAVE
+  DEPLOYED
+}
+
+enum MusterStatus {
+  PRESENT
+  ABSENT
+  MISSING
+  INJURED
+  ON_MISSION
+  OTHER
+}
+
+enum AssetCondition {
+  SERVICEABLE
+  UNSERVICEABLE
+  DAMAGED
+  LOST
+  UNDER_REPAIR
+}
+
+enum AssetStatus {
+  AVAILABLE
+  DEPLOYED
+  MAINTENANCE
+  LOST
+  DECOMMISSIONED
+}
+
+enum DeploymentStatus {
+  ACTIVE
+  RETURNED
+  TRANSFERRED
+  LOST
+}
+
+enum IncidentSeverity {
+  SEV1_MINOR
+  SEV2_LOW
+  SEV3_MODERATE
+  SEV4_HIGH
+  SEV5_CRITICAL
+}
+
+enum IncidentStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum ChecklistStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum RollCallStatus {
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum SyncOperationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CONFLICT
+}
+
+enum SyncSessionStatus {
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  PARTIAL
+}
+
+// ─── User & Authentication ───────────────────────────────────
+
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  passwordHash  String
+  name          String
+  role          Role     @default(FIELD_OPERATOR)
+  unitId        String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  unit          Unit?           @relation(fields: [unitId], references: [id])
+  devices       Device[]
+  auditLogs     AuditLog[]
+  incidents     Incident[]      @relation("IncidentReporter")
+  rollCalls     RollCall[]      @relation("RollCallInitiator")
+  deployments   AssetDeployment[] @relation("DeploymentAssigner")
+  checklists    ChecklistRecord[] @relation("ChecklistAssignee")
+
+  @@index([email])
+  @@index([unitId])
+  @@index([role])
+}
+
+// ─── Unit / Team ─────────────────────────────────────────────
+
+model Unit {
+  id            String   @id @default(uuid())
+  name          String
+  description   String?
+  callsign      String?  @unique
+  parentUnitId  String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  parentUnit    Unit?    @relation("UnitHierarchy", fields: [parentUnitId], references: [id])
+  childUnits    Unit[]   @relation("UnitHierarchy")
+  users         User[]
+  devices       Device[]
+  personnel     Personnel[]
+  assets        Asset[]
+  rollCalls     RollCall[]
+  incidents     Incident[]
+  checklists    ChecklistTemplate[]
+
+  @@index([parentUnitId])
+}
+
+// ─── Device Registry ─────────────────────────────────────────
+
+model Device {
+  id                String       @id @default(uuid())
+  deviceFingerprint String       @unique
+  name              String?
+  userId            String
+  unitId            String?
+  status            DeviceStatus @default(ACTIVE)
+  lastSeenAt        DateTime     @default(now())
+  lastSyncAt        DateTime?
+  pendingOpsCount   Int          @default(0)
+  syncFailureCount  Int          @default(0)
+  metadata          Json?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  user              User         @relation(fields: [userId], references: [id])
+  unit              Unit?        @relation(fields: [unitId], references: [id])
+  syncSessions      SyncSession[]
+  syncOperations    SyncOperation[]
+  rollCallEntries   RollCallEntry[]
+  auditLogs         AuditLog[]
+
+  @@index([userId])
+  @@index([unitId])
+  @@index([deviceFingerprint])
+  @@index([lastSyncAt])
+}
+
+// ─── Personnel ───────────────────────────────────────────────
+
+model Personnel {
+  id            String          @id @default(uuid())
+  name          String
+  callsign      String?
+  role          String?
+  rank          String?
+  status        PersonnelStatus @default(ACTIVE)
+  unitId        String
+  contactInfo   Json?
+  notes         String?
+  version       Int             @default(1)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  unit          Unit            @relation(fields: [unitId], references: [id])
+  rollCallEntries RollCallEntry[]
+  deployments   AssetDeployment[] @relation("DeploymentRecipient")
+  incidents     IncidentPersonnel[]
+
+  @@index([unitId])
+  @@index([status])
+  @@index([callsign])
+}
+
+// ─── Asset ───────────────────────────────────────────────────
+
+model Asset {
+  id            String         @id @default(uuid())
+  name          String
+  serialNumber  String?        @unique
+  category      String
+  condition     AssetCondition @default(SERVICEABLE)
+  status        AssetStatus    @default(AVAILABLE)
+  unitId        String
+  location      String?
+  notes         String?
+  metadata      Json?
+  version       Int            @default(1)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  unit          Unit           @relation(fields: [unitId], references: [id])
+  deployments   AssetDeployment[]
+  incidents     IncidentAsset[]
+
+  @@index([unitId])
+  @@index([category])
+  @@index([status])
+  @@index([serialNumber])
+}
+
+// ─── Asset Deployment ────────────────────────────────────────
+
+model AssetDeployment {
+  id              String           @id @default(uuid())
+  assetId         String
+  assignedToId    String
+  assignedById    String
+  status          DeploymentStatus @default(ACTIVE)
+  location        String?
+  notes           String?
+  deployedAt      DateTime         @default(now())
+  returnedAt      DateTime?
+  version         Int              @default(1)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  asset           Asset            @relation(fields: [assetId], references: [id])
+  assignedTo      Personnel        @relation("DeploymentRecipient", fields: [assignedToId], references: [id])
+  assignedBy      User             @relation("DeploymentAssigner", fields: [assignedById], references: [id])
+
+  @@index([assetId])
+  @@index([assignedToId])
+  @@index([status])
+  @@index([deployedAt])
+}
+
+// ─── Roll Call ───────────────────────────────────────────────
+
+model RollCall {
+  id            String         @id @default(uuid())
+  unitId        String
+  initiatedById String
+  deviceId      String?
+  status        RollCallStatus @default(IN_PROGRESS)
+  notes         String?
+  completedAt   DateTime?
+  version       Int            @default(1)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  unit          Unit           @relation(fields: [unitId], references: [id])
+  initiatedBy   User           @relation("RollCallInitiator", fields: [initiatedById], references: [id])
+  entries       RollCallEntry[]
+
+  @@index([unitId])
+  @@index([createdAt])
+  @@index([status])
+}
+
+model RollCallEntry {
+  id            String       @id @default(uuid())
+  rollCallId    String
+  personnelId   String
+  status        MusterStatus @default(ABSENT)
+  deviceId      String?
+  notes         String?
+  recordedAt    DateTime     @default(now())
+  version       Int          @default(1)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  rollCall      RollCall     @relation(fields: [rollCallId], references: [id], onDelete: Cascade)
+  personnel     Personnel    @relation(fields: [personnelId], references: [id])
+  device        Device?      @relation(fields: [deviceId], references: [id])
+
+  @@unique([rollCallId, personnelId])
+  @@index([rollCallId])
+  @@index([personnelId])
+}
+
+// ─── Checklists ──────────────────────────────────────────────
+
+model ChecklistTemplate {
+  id            String   @id @default(uuid())
+  name          String
+  description   String?
+  unitId        String?
+  items         Json     // Array of { id, label, required, order }
+  isActive      Boolean  @default(true)
+  version       Int      @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  unit          Unit?    @relation(fields: [unitId], references: [id])
+  records       ChecklistRecord[]
+
+  @@index([unitId])
+}
+
+model ChecklistRecord {
+  id            String          @id @default(uuid())
+  templateId    String
+  assignedToId  String?
+  deviceId      String?
+  status        ChecklistStatus @default(NOT_STARTED)
+  entries       Json            // Array of { itemId, checked, checkedAt, checkedById }
+  notes         String?
+  completedAt   DateTime?
+  version       Int             @default(1)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  template      ChecklistTemplate @relation(fields: [templateId], references: [id])
+  assignedTo    User?             @relation("ChecklistAssignee", fields: [assignedToId], references: [id])
+
+  @@index([templateId])
+  @@index([assignedToId])
+  @@index([status])
+}
+
+// ─── Incidents ───────────────────────────────────────────────
+
+model Incident {
+  id            String           @id @default(uuid())
+  type          String
+  severity      IncidentSeverity @default(SEV3_MODERATE)
+  title         String
+  description   String
+  location      String?
+  status        IncidentStatus   @default(OPEN)
+  reporterId    String
+  unitId        String?
+  deviceId      String?
+  metadata      Json?
+  version       Int              @default(1)
+  resolvedAt    DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  reporter      User             @relation("IncidentReporter", fields: [reporterId], references: [id])
+  unit          Unit?            @relation(fields: [unitId], references: [id])
+  personnel     IncidentPersonnel[]
+  assets        IncidentAsset[]
+
+  @@index([severity])
+  @@index([status])
+  @@index([unitId])
+  @@index([reporterId])
+  @@index([createdAt])
+}
+
+model IncidentPersonnel {
+  id            String    @id @default(uuid())
+  incidentId    String
+  personnelId   String
+  role          String?   // "involved", "witness", "responder"
+  createdAt     DateTime  @default(now())
+
+  incident      Incident  @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  personnel     Personnel @relation(fields: [personnelId], references: [id])
+
+  @@unique([incidentId, personnelId])
+}
+
+model IncidentAsset {
+  id            String    @id @default(uuid())
+  incidentId    String
+  assetId       String
+  role          String?   // "damaged", "involved", "used"
+  createdAt     DateTime  @default(now())
+
+  incident      Incident  @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  asset         Asset     @relation(fields: [assetId], references: [id])
+
+  @@unique([incidentId, assetId])
+}
+
+// ─── Sync Operations (CRDT Operation Log) ────────────────────
+
+model SyncOperation {
+  id              String              @id @default(uuid())
+  operationId     String              @unique   // Client-generated UUID — idempotency key
+  deviceId        String
+  entityType      String              // "asset", "personnel", "incident", etc.
+  entityId        String
+  operationType   String              // "CREATE", "UPDATE", "DELETE"
+  data            Json                // The operation payload
+  hlcTimestamp    String              // Hybrid logical clock timestamp string
+  version         Int                 @default(1)
+  status          SyncOperationStatus @default(PENDING)
+  conflictWith    String?             // operationId of conflicting op
+  resolvedData    Json?               // Merged result if conflict
+  sessionId       String?
+  createdAt       DateTime            @default(now())
+
+  device          Device              @relation(fields: [deviceId], references: [id])
+  session         SyncSession?        @relation(fields: [sessionId], references: [id])
+
+  @@index([operationId])
+  @@index([deviceId])
+  @@index([entityType, entityId])
+  @@index([hlcTimestamp])
+  @@index([status])
+  @@index([sessionId])
+  @@index([createdAt])
+}
+
+model SyncSession {
+  id              String            @id @default(uuid())
+  deviceId        String
+  status          SyncSessionStatus @default(IN_PROGRESS)
+  operationsSent  Int               @default(0)
+  operationsRecv  Int               @default(0)
+  conflictsFound  Int               @default(0)
+  errorMessage    String?
+  startedAt       DateTime          @default(now())
+  completedAt     DateTime?
+
+  device          Device            @relation(fields: [deviceId], references: [id])
+  operations      SyncOperation[]
+
+  @@index([deviceId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+// ─── Audit Log (Immutable) ───────────────────────────────────
+
+model AuditLog {
+  id            String   @id @default(uuid())
+  userId        String?
+  deviceId      String?
+  entityType    String
+  entityId      String
+  action        String   // "CREATE", "UPDATE", "DELETE", "SYNC_MERGE", "CONFLICT_RESOLVE"
+  changes       Json?    // { field: { old, new } }
+  metadata      Json?
+  operationId   String?  // links to SyncOperation if sync-originated
+  timestamp     DateTime @default(now())
+
+  user          User?    @relation(fields: [userId], references: [id])
+  device        Device?  @relation(fields: [deviceId], references: [id])
+
+  // No updatedAt — audit logs are immutable
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([deviceId])
+  @@index([timestamp])
+  @@index([action])
+  @@index([operationId])
+}
