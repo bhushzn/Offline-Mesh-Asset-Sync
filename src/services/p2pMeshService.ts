@@ -21,18 +21,27 @@ type SyncMsgListener = (msg: SyncMessage) => void;
 class P2PMeshService {
   private transportManager: TransportManager;
   private meshRouter: MeshRouter;
-  private localDeviceId = 'device-a17';
-  private localDeviceName = 'A-17 / NORTH NODE';
-  private localRole = 'Field Lead';
+  private localDeviceId: string;
+  private localDeviceName: string;
+  private localRole: string;
   private peerListeners: Set<PeerListener> = new Set();
   private msgListeners: Set<SyncMsgListener> = new Set();
   private encryptionEnabled = true;
   private mode: OperatingMode = 'FIELD_MODE';
 
   constructor() {
+    const isMobile = typeof window !== 'undefined' && (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || window.innerWidth < 768);
+    const defaultId = isMobile ? 'device-b04' : 'device-a17';
+    const defaultName = isMobile ? 'B-04 / DELTA PATROL' : 'A-17 / NORTH NODE';
+    const defaultRole = isMobile ? 'Scout Lead' : 'Field Lead';
+
+    this.localDeviceId = (typeof localStorage !== 'undefined' && localStorage.getItem('fieldlink_device_id')) || defaultId;
+    this.localDeviceName = (typeof localStorage !== 'undefined' && localStorage.getItem('fieldlink_device_name')) || defaultName;
+    this.localRole = defaultRole;
+
     const defaultWs = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
       ? `ws://${window.location.hostname}:3001/ws/mesh`
-      : 'wss://offline-mesh-asset-sync-production.up.railway.app/ws/mesh';
+      : 'wss://free.blr2.piesocket.com/v3/fieldlink_tactical_2047?api_key=VC3oYAwMrxqXd6d3o4uEd50n4Anexpression=1';
     const wsUrl = (import.meta as any).env?.VITE_WS_URL || defaultWs;
 
     this.transportManager = new TransportManager(this.localDeviceId, wsUrl);

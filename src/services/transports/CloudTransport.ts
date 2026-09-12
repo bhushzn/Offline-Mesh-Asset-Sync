@@ -1,4 +1,4 @@
-﻿import { IMeshTransport, TransportMessageListener, TransportStateListener } from './MeshTransport';
+import { IMeshTransport, TransportMessageListener, TransportStateListener } from './MeshTransport';
 import { TransportCapabilities, TransportStatus, TransportType } from '../../types/tactical';
 
 export class CloudTransport implements IMeshTransport {
@@ -54,9 +54,23 @@ export class CloudTransport implements IMeshTransport {
       this.ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+          let innerMsg = null;
+          let sender = null;
+
           if (data.action === 'MESH_PACKET' && data.message) {
+            innerMsg = data.message;
+            sender = data.fromDeviceId || data.senderDeviceId || data.message.senderDeviceId;
+          } else if (data.message && data.message.type) {
+            innerMsg = data.message;
+            sender = data.senderDeviceId || data.message.senderDeviceId;
+          } else if (data.type && data.senderDeviceId) {
+            innerMsg = data;
+            sender = data.senderDeviceId;
+          }
+
+          if (innerMsg && sender && sender !== this.localDeviceId) {
             for (const listener of this.messageListeners) {
-              listener(data.message, data.message.senderDeviceId || 'cloud-gateway', 'Cloud');
+              listener(innerMsg, sender, 'Cloud');
             }
           }
         } catch {
@@ -74,7 +88,7 @@ export class CloudTransport implements IMeshTransport {
         this.notifyState('cloud-gateway', 'disconnected');
         // Graceful reconnect with backoff
         clearTimeout(this.reconnectTimeout);
-        this.reconnectTimeout = setTimeout(() => this.connectGateway(), 15000);
+        this.reconnectTimeout = setTimeout(() => this.connectGateway(), 10000);
       };
     } catch {
       this.status = 'disconnected';
@@ -100,6 +114,8 @@ export class CloudTransport implements IMeshTransport {
     try {
       this.ws.send(JSON.stringify({
         action: 'SEND_TO_DEVICE',
+        fromDeviceId: this.localDeviceId,
+        senderDeviceId: this.localDeviceId,
         targetDeviceId: peerId,
         message,
       }));
@@ -115,7 +131,9 @@ export class CloudTransport implements IMeshTransport {
     }
     try {
       this.ws.send(JSON.stringify({
-        action: 'BROADCAST',
+        action: 'MESH_PACKET',
+        fromDeviceId: this.localDeviceId,
+        senderDeviceId: this.localDeviceId,
         message,
       }));
       return 1;

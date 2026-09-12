@@ -15,14 +15,14 @@ import { SettingsView } from './components/views/SettingsView';
 import { DemoNodeSelector } from './components/demo/DemoNodeSelector';
 import { AutomatedTestSuiteModal } from './components/test/AutomatedTestSuiteModal';
 import { DeviceMetadata, OperatingMode, SyncStats } from './types/tactical';
-import { DEFAULT_DEVICE, seedDatabaseIfEmpty } from './services/seedData';
+import { DEFAULT_DEVICE, getInitialDevice, seedDatabaseIfEmpty } from './services/seedData';
 import { syncManager } from './services/syncManager';
 import { p2pMesh } from './services/p2pMeshService';
 import { tacticalAudio } from './utils/audio';
 
 export function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
-  const [activeDevice, setActiveDevice] = useState<DeviceMetadata>(DEFAULT_DEVICE);
+  const [activeDevice, setActiveDevice] = useState<DeviceMetadata>(getInitialDevice());
   const [mode, setMode] = useState<OperatingMode>('FIELD_MODE');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isTestSuiteOpen, setIsTestSuiteOpen] = useState(false);

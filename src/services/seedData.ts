@@ -22,6 +22,27 @@ export const DEFAULT_DEVICE: DeviceMetadata = {
   vectorClock: { 'device-a17': 4, 'device-b04': 2 },
 };
 
+export const MOBILE_DEVICE: DeviceMetadata = {
+  deviceId: 'device-b04',
+  deviceName: 'B-04 / DELTA PATROL',
+  operatorName: 'Marcus Vance',
+  role: 'Scout Lead',
+  nodeType: 'Delta Patrol',
+  status: 'online',
+  batteryLevel: 82,
+  isTrusted: true,
+  lastSeen: Date.now(),
+  vectorClock: { 'device-a17': 2, 'device-b04': 5 },
+};
+
+export const getInitialDevice = (): DeviceMetadata => {
+  if (typeof window !== 'undefined') {
+    const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || window.innerWidth < 768;
+    return isMobile ? MOBILE_DEVICE : DEFAULT_DEVICE;
+  }
+  return DEFAULT_DEVICE;
+};
+
 export const INITIAL_ASSETS: Asset[] = [
   {
     id: 'asset-mk204',
