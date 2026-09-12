@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { DeviceMetadata, SyncStats } from '../../types/tactical';
 import { tacticalAudio } from '../../utils/audio';
+import { PWAInstallButton } from '../common/PWAInstallButton';
 
 interface HeaderProps {
   breadcrumb: string;
@@ -125,6 +126,9 @@ export const Header: React.FC<HeaderProps> = ({
           <RefreshCw className="w-3.5 h-3.5" />
           <span className="hidden sm:inline text-[11px]">Sync Mesh</span>
         </button>
+
+        {/* PWA Install Button */}
+        <PWAInstallButton />
 
         {/* Audio Toggle */}
         <button
