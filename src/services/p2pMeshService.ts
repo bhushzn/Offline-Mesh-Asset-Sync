@@ -66,8 +66,10 @@ class P2PMeshService {
 
   private initWebSocketSignaling() {
     try {
-      if (typeof window === 'undefined') return;
-      const wsUrl = `ws://${window.location.hostname}:3001/ws/mesh`;
+      const defaultWs = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? `ws://${window.location.hostname}:3001/ws/mesh`
+        : 'wss://offline-mesh-asset-sync-production.up.railway.app/ws/mesh';
+      const wsUrl = (import.meta as any).env?.VITE_WS_URL || defaultWs;
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {

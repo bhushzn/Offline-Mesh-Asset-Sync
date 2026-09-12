@@ -26,8 +26,8 @@ export type CloudStatusListener = (status: {
 }) => void;
 
 class CloudSyncService {
-  private backendUrl = 'http://localhost:3001/api/v1';
-  private healthUrl = 'http://localhost:3001/health';
+  private backendUrl = (import.meta as any).env?.VITE_API_URL || 'https://offline-mesh-asset-sync-production.up.railway.app/api/v1';
+  private healthUrl = (import.meta as any).env?.VITE_HEALTH_URL || 'https://offline-mesh-asset-sync-production.up.railway.app/health';
   private isSyncing = false;
   private serverAvailable = false;
   private lastSyncedAt: number | null = null;

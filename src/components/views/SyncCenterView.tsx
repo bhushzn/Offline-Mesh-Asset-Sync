@@ -164,7 +164,7 @@ export const SyncCenterView: React.FC<Props> = ({ syncStats }) => {
               </span>
             </div>
             <div className="text-xs text-slate-400 font-mono mt-0.5">
-              Endpoint: <span className="text-slate-300">http://localhost:3001/api/v1/sync</span> • Server Ver: #{cloudStatus.serverVersion}
+              Endpoint: <span className="text-slate-300">{cloudSync.getBackendUrl()}/sync</span> • Server Ver: #{cloudStatus.serverVersion}
             </div>
           </div>
         </div>
