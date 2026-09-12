@@ -12,6 +12,9 @@ import { config } from './config/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { registerRoutes } from './routes/index.js';
 
+import websocket from '@fastify/websocket';
+import { signalingRoutes } from './routes/signalingRoutes.js';
+
 export async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
@@ -31,6 +34,10 @@ export async function buildApp(): Promise<FastifyInstance> {
 
   // Global Error Handler
   app.setErrorHandler(errorHandler);
+
+  // WebSocket support for P2P Mesh signaling
+  await app.register(websocket);
+  await app.register(signalingRoutes, { prefix: '/ws' });
 
   // Security Headers
   await app.register(helmet, {

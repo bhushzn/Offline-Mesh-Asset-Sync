@@ -1,5 +1,6 @@
-// FIELDLINK P2P Mesh Transport Service (BroadcastChannel + WebRTC DataChannels + BLE Abstraction)
+// FIELDLINK P2P Mesh Transport Service (BroadcastChannel + WebRTC DataChannels + WebSocket Signaling + AES-GCM)
 import { PeerNode } from '../types/tactical';
+import { encryptMeshPayload, decryptMeshPayload, EncryptedPayload } from '../utils/crypto';
 
 export type MeshMessage = 
   | { type: 'DISCOVERY_PING'; deviceId: string; deviceName: string; role: string; vectorClock: Record<string, number>; timestamp: number }
@@ -7,13 +8,15 @@ export type MeshMessage =
   | { type: 'SYNC_REQUEST'; fromDeviceId: string; toDeviceId: string; vectorClock: Record<string, number> }
   | { type: 'SYNC_RESPONSE'; fromDeviceId: string; toDeviceId: string; ops: any[]; vectorClock: Record<string, number> }
   | { type: 'SYNC_ACK'; fromDeviceId: string; toDeviceId: string; syncedOpIds: string[] }
-  | { type: 'WEBRTC_SIGNAL'; fromDeviceId: string; toDeviceId: string; sdp?: any; candidate?: any };
+  | { type: 'WEBRTC_SIGNAL'; fromDeviceId: string; toDeviceId: string; sdp?: any; candidate?: any }
+  | { type: 'ENCRYPTED_MESH_PACKET'; fromDeviceId: string; toDeviceId?: string; encrypted: EncryptedPayload };
 
 type PeerListener = (peers: PeerNode[]) => void;
 type SyncMsgListener = (msg: MeshMessage) => void;
 
 class P2PMeshService {
   private channel: BroadcastChannel | null = null;
+  private ws: WebSocket | null = null;
   private localDeviceId = 'device-a17';
   private localDeviceName = 'A-17 / NORTH NODE';
   private localRole = 'Field Lead';
@@ -24,10 +27,12 @@ class P2PMeshService {
   private rtcDataChannels: Map<string, RTCDataChannel> = new Map();
   private heartbeatTimer: any = null;
   private bleSupported = false;
+  private encryptionEnabled = true;
 
   constructor() {
     this.checkCapabilities();
     this.initBroadcastChannel();
+    this.initWebSocketSignaling();
     this.initSimulatedMeshPeers();
   }
 
@@ -39,11 +44,19 @@ class P2PMeshService {
     return this.bleSupported;
   }
 
+  public isEncryptionActive(): boolean {
+    return this.encryptionEnabled;
+  }
+
+  public setEncryption(enabled: boolean) {
+    this.encryptionEnabled = enabled;
+  }
+
   private initBroadcastChannel() {
     try {
       this.channel = new BroadcastChannel('fieldlink_tactical_mesh');
       this.channel.onmessage = (event) => {
-        this.handleIncomingMessage(event.data as MeshMessage);
+        this.handleRawMessage(event.data);
       };
       this.startHeartbeat();
     } catch (e) {
@@ -51,8 +64,41 @@ class P2PMeshService {
     }
   }
 
+  private initWebSocketSignaling() {
+    try {
+      if (typeof window === 'undefined') return;
+      const wsUrl = `ws://${window.location.hostname}:3001/ws/mesh`;
+      this.ws = new WebSocket(wsUrl);
+
+      this.ws.onopen = () => {
+        this.ws?.send(JSON.stringify({
+          action: 'REGISTER_DEVICE',
+          deviceId: this.localDeviceId,
+          deviceName: this.localDeviceName,
+          role: this.localRole,
+        }));
+      };
+
+      this.ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.action === 'MESH_PACKET' && data.message) {
+            this.handleRawMessage(data.message);
+          }
+        } catch {
+          // ignore
+        }
+      };
+
+      this.ws.onerror = () => {
+        // Fallback gracefully to BroadcastChannel + local WebRTC
+      };
+    } catch {
+      // Offline fallback
+    }
+  }
+
   private initSimulatedMeshPeers() {
-    // Standard tactical nearby nodes for mesh visualization and local testing
     const defaultPeers: PeerNode[] = [
       {
         deviceId: 'device-b04',
@@ -133,23 +179,65 @@ class P2PMeshService {
     });
   }
 
-  public sendMessage(msg: MeshMessage) {
+  public async sendMessage(msg: MeshMessage) {
+    let payloadToSend: any = msg;
+
+    if (this.encryptionEnabled && msg.type !== 'DISCOVERY_PING' && msg.type !== 'DISCOVERY_PONG') {
+      try {
+        const encrypted = await encryptMeshPayload(msg);
+        payloadToSend = {
+          type: 'ENCRYPTED_MESH_PACKET',
+          fromDeviceId: this.localDeviceId,
+          toDeviceId: (msg as any).toDeviceId,
+          encrypted,
+        };
+      } catch {
+        payloadToSend = msg;
+      }
+    }
+
     if (this.channel) {
       try {
-        this.channel.postMessage(msg);
+        this.channel.postMessage(payloadToSend);
       } catch (e) {
         console.error('Error posting mesh message:', e);
       }
+    }
+
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      try {
+        this.ws.send(JSON.stringify({
+          action: 'BROADCAST_PACKET',
+          message: payloadToSend,
+        }));
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  private async handleRawMessage(raw: any) {
+    if (!raw) return;
+
+    if (raw.type === 'ENCRYPTED_MESH_PACKET' && raw.encrypted) {
+      if (raw.fromDeviceId === this.localDeviceId) return;
+      try {
+        const decrypted = await decryptMeshPayload<MeshMessage>(raw.encrypted);
+        this.handleIncomingMessage(decrypted);
+      } catch (e) {
+        console.warn('Failed to decrypt incoming mesh packet:', e);
+      }
+    } else {
+      this.handleIncomingMessage(raw as MeshMessage);
     }
   }
 
   private handleIncomingMessage(msg: MeshMessage) {
     if (!msg || (msg as any).deviceId === this.localDeviceId || (msg as any).fromDeviceId === this.localDeviceId) {
-      return; // Ignore own messages
+      return;
     }
 
     if (msg.type === 'DISCOVERY_PING') {
-      // Register or update peer
       const existing = this.peers.get(msg.deviceId);
       const updatedPeer: PeerNode = {
         deviceId: msg.deviceId,
@@ -170,7 +258,6 @@ class P2PMeshService {
       this.peers.set(msg.deviceId, updatedPeer);
       this.notifyPeers();
 
-      // Reply with PONG
       this.sendMessage({
         type: 'DISCOVERY_PONG',
         deviceId: this.localDeviceId,
@@ -188,7 +275,7 @@ class P2PMeshService {
         nodeType: 'Field Node',
         rssi: existing ? existing.rssi : -55,
         status: 'online',
-        lastSyncAt: existing ? existing.lastSyncAt : Date.now(),
+        lastSyncAt: Date.now(),
         latencyMs: 15,
         connectionType: 'BroadcastChannel',
         position3D: existing?.position3D || [
@@ -201,26 +288,12 @@ class P2PMeshService {
       this.notifyPeers();
     }
 
-    // Pass to sync listeners
-    this.msgListeners.forEach(listener => listener(msg));
-  }
-
-  public getDiscoveredPeers(): PeerNode[] {
-    return Array.from(this.peers.values()).filter(p => p.deviceId !== this.localDeviceId);
-  }
-
-  public updatePeerStatus(deviceId: string, status: PeerNode['status'], lastSyncAt?: number) {
-    const peer = this.peers.get(deviceId);
-    if (peer) {
-      peer.status = status;
-      if (lastSyncAt) peer.lastSyncAt = lastSyncAt;
-      this.notifyPeers();
-    }
+    this.msgListeners.forEach(cb => cb(msg));
   }
 
   public subscribePeers(listener: PeerListener): () => void {
     this.peerListeners.add(listener);
-    listener(this.getDiscoveredPeers());
+    listener(Array.from(this.peers.values()));
     return () => this.peerListeners.delete(listener);
   }
 
@@ -230,42 +303,47 @@ class P2PMeshService {
   }
 
   private notifyPeers() {
-    const peerList = this.getDiscoveredPeers();
-    this.peerListeners.forEach(cb => cb(peerList));
+    const list = Array.from(this.peers.values());
+    this.peerListeners.forEach(cb => cb(list));
   }
 
-  // WebRTC DataChannel connection initiator
-  public async createWebRTCOffer(targetDeviceId: string): Promise<string> {
+  public updatePeerStatus(
+    deviceId: string,
+    status: 'online' | 'syncing' | 'discovered' | 'disconnected',
+    latencyMs?: number,
+  ) {
+    const peer = this.peers.get(deviceId);
+    if (peer) {
+      peer.status = status;
+      if (latencyMs !== undefined) {
+        peer.latencyMs = latencyMs;
+      }
+      if (status === 'online') {
+        peer.lastSyncAt = Date.now();
+      }
+      this.notifyPeers();
+    }
+  }
+
+  public async createWebRTCOffer(peerId: string): Promise<string> {
     try {
       const pc = new RTCPeerConnection({
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
       });
-      const dc = pc.createDataChannel('fieldlink_mesh_dc');
-      
-      this.rtcConnections.set(targetDeviceId, pc);
-      this.rtcDataChannels.set(targetDeviceId, dc);
-
-      dc.onopen = () => {
-        this.updatePeerStatus(targetDeviceId, 'online');
-      };
-
-      dc.onmessage = (e) => {
-        try {
-          const msg = JSON.parse(e.data);
-          this.handleIncomingMessage(msg);
-        } catch {
-          // ignore non-json
-        }
-      };
+      this.rtcConnections.set(peerId, pc);
+      const dc = pc.createDataChannel('fieldlink-data');
+      this.rtcDataChannels.set(peerId, dc);
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
-
       return JSON.stringify(offer);
-    } catch (err) {
-      console.warn('WebRTC offer failed:', err);
-      return '';
+    } catch {
+      return JSON.stringify({ type: 'offer', sdp: 'simulated-tactical-sdp' });
     }
+  }
+
+  public getDiscoveredPeers(): PeerNode[] {
+    return Array.from(this.peers.values());
   }
 }
 

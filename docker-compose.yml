@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tacsync-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword2026
+      POSTGRES_DB: tacsync
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  tacsync-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: tacsync-backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql://postgres:postgrespassword2026@postgres:5432/tacsync?schema=public
+      JWT_SECRET: tacsync_production_tactical_jwt_secret_key_2026_super_secure
+      JWT_REFRESH_SECRET: tacsync_production_tactical_refresh_secret_key_2026_super_secure
+      CORS_ORIGIN: "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173"
+      LOG_LEVEL: info
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+    driver: local

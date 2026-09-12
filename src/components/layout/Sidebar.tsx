@@ -1,4 +1,3 @@
-// FIELDLINK Tactical Navigation Sidebar
 import React from 'react';
 import { 
   LayoutDashboard, 
@@ -10,12 +9,13 @@ import {
   Settings, 
   ShieldCheck, 
   Smartphone,
-  Layers
+  Layers,
+  Map
 } from 'lucide-react';
 import { DeviceMetadata } from '../../types/tactical';
 import { tacticalAudio } from '../../utils/audio';
 
-export type ActiveTab = 'dashboard' | 'assets' | 'personnel' | 'checklists' | 'incidents' | 'sync' | 'settings';
+export type ActiveTab = 'dashboard' | 'assets' | 'personnel' | 'checklists' | 'incidents' | 'map' | 'sync' | 'settings';
 
 interface SidebarProps {
   activeTab: ActiveTab;
@@ -38,6 +38,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'personnel', label: 'Personnel / Roll Call', icon: Users },
     { id: 'checklists', label: 'Checklists', icon: CheckSquare },
     { id: 'incidents', label: 'Incidents', icon: AlertTriangle },
+    { id: 'map', label: 'Tactical Map / GIS', icon: Map },
     { id: 'sync', label: 'Sync Center', icon: Share2 },
     { id: 'settings', label: 'Settings', icon: Settings },
   ] as const;

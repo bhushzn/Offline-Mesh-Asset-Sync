@@ -7,6 +7,7 @@ import { AssetsView } from './components/views/AssetsView';
 import { PersonnelView } from './components/views/PersonnelView';
 import { ChecklistsView } from './components/views/ChecklistsView';
 import { IncidentsView } from './components/views/IncidentsView';
+import { MapView } from './components/views/MapView';
 import { SyncCenterView } from './components/views/SyncCenterView';
 import { SettingsView } from './components/views/SettingsView';
 import { DemoNodeSelector } from './components/demo/DemoNodeSelector';
@@ -71,6 +72,8 @@ export function App() {
         return 'Checklists';
       case 'incidents':
         return 'Incidents';
+      case 'map':
+        return 'Tactical Map / GIS';
       case 'sync':
         return 'Sync Center';
       case 'settings':
@@ -120,6 +123,7 @@ export function App() {
           {activeTab === 'personnel' && <PersonnelView />}
           {activeTab === 'checklists' && <ChecklistsView />}
           {activeTab === 'incidents' && <IncidentsView />}
+          {activeTab === 'map' && <MapView />}
           {activeTab === 'sync' && <SyncCenterView syncStats={syncStats} />}
           {activeTab === 'settings' && (
             <SettingsView

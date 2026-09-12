@@ -24,6 +24,9 @@ import { offlineStorage, STORES } from '../../services/offlineStorageService';
 import { MeshTopology3D } from '../mesh/MeshTopology3D';
 import { tacticalAudio } from '../../utils/audio';
 
+import { cloudSync, CloudSyncResult } from '../../services/cloudSyncService';
+import { Cloud, Lock, Server } from 'lucide-react';
+
 interface Props {
   syncStats: SyncStats;
 }
@@ -36,12 +39,22 @@ export const SyncCenterView: React.FC<Props> = ({ syncStats }) => {
   const [isSignalingModalOpen, setIsSignalingModalOpen] = useState(false);
   const [webrtcOfferText, setWebrtcOfferText] = useState('');
   const [isSyncingAll, setIsSyncingAll] = useState(false);
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+  const [cloudStatus, setCloudStatus] = useState({
+    isOnline: true,
+    isSyncing: false,
+    lastSyncedAt: null as number | null,
+    serverVersion: 0,
+    serverAvailable: false,
+  });
+  const [lastCloudResult, setLastCloudResult] = useState<CloudSyncResult | null>(null);
 
   useEffect(() => {
     loadData();
 
     const unsubPeers = p2pMesh.subscribePeers((list) => setPeers(list));
     const unsubQueue = syncQueue.subscribe((_, queue) => setQueueItems(queue));
+    const unsubCloud = cloudSync.subscribe((status) => setCloudStatus(status));
     const unsubConflicts = syncManager.subscribeConflicts(() => {
       setConflicts(syncManager.getRecentConflicts());
     });
@@ -51,6 +64,7 @@ export const SyncCenterView: React.FC<Props> = ({ syncStats }) => {
     return () => {
       unsubPeers();
       unsubQueue();
+      unsubCloud();
       unsubConflicts();
     };
   }, []);
@@ -87,7 +101,22 @@ export const SyncCenterView: React.FC<Props> = ({ syncStats }) => {
     setIsSignalingModalOpen(true);
   };
 
+  const handleTriggerCloudSync = async () => {
+    tacticalAudio.playClick();
+    setIsCloudSyncing(true);
+    const res = await cloudSync.syncWithCloud();
+    setLastCloudResult(res);
+    setIsCloudSyncing(false);
+    if (res.success) {
+      tacticalAudio.playSyncSuccess();
+    } else {
+      tacticalAudio.playAlert();
+    }
+    loadData();
+  };
+
   const isBLEAvailable = p2pMesh.isBLEAvailable();
+  const isEncrypted = p2pMesh.isEncryptionActive();
 
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
@@ -117,6 +146,47 @@ export const SyncCenterView: React.FC<Props> = ({ syncStats }) => {
         </div>
       </div>
 
+      {/* Command HQ Cloud Gateway Synchronization Card */}
+      <div className="p-4 rounded-xl bg-slate-900 border border-slate-800 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex items-center space-x-3.5">
+          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+            cloudStatus.serverAvailable ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' : 'bg-slate-800 text-slate-400 border border-slate-700'
+          }`}>
+            <Server className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-slate-100 font-sans">Command HQ Central Backend</span>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                cloudStatus.serverAvailable ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+              }`}>
+                {cloudStatus.serverAvailable ? 'ONLINE (FASTIFY+PRISMA)' : 'OFFLINE (MESH LOCAL)'}
+              </span>
+            </div>
+            <div className="text-xs text-slate-400 font-mono mt-0.5">
+              Endpoint: <span className="text-slate-300">http://localhost:3001/api/v1/sync</span> • Server Ver: #{cloudStatus.serverVersion}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+          {lastCloudResult && (
+            <div className="text-right text-[11px] font-mono hidden sm:block">
+              <div className="text-emerald-400">↑ {lastCloudResult.pushedCount} pushed • ↓ {lastCloudResult.pulledCount} pulled</div>
+              <div className="text-slate-500">{new Date(lastCloudResult.timestamp).toLocaleTimeString()}</div>
+            </div>
+          )}
+          <button
+            onClick={handleTriggerCloudSync}
+            disabled={isCloudSyncing}
+            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition flex items-center gap-2 shadow-lg shadow-blue-900/40 disabled:opacity-50"
+          >
+            <Cloud className={`w-4 h-4 ${isCloudSyncing ? 'animate-bounce' : ''}`} />
+            <span>{isCloudSyncing ? 'Syncing with HQ...' : 'Sync with Command HQ'}</span>
+          </button>
+        </div>
+      </div>
+
       {/* 3D Interactive Mesh Network Canvas */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
@@ -134,7 +204,7 @@ export const SyncCenterView: React.FC<Props> = ({ syncStats }) => {
       </div>
 
       {/* Telemetry & Capability Status Bar */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 font-mono text-xs">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 font-mono text-xs">
         {/* P2P Transport Status */}
         <div className="p-3.5 rounded-lg bg-[#11161a] border border-[#232c35] flex items-center space-x-3">
           <div className="w-8 h-8 rounded bg-cyan-950/60 text-cyan-400 flex items-center justify-center">
@@ -143,6 +213,17 @@ export const SyncCenterView: React.FC<Props> = ({ syncStats }) => {
           <div>
             <div className="text-[10px] uppercase text-slate-400">P2P Mesh Layer</div>
             <div className="font-bold text-slate-100">BroadcastChannel + WebRTC</div>
+          </div>
+        </div>
+
+        {/* E2E Mesh Crypto */}
+        <div className="p-3.5 rounded-lg bg-[#11161a] border border-[#232c35] flex items-center space-x-3">
+          <div className="w-8 h-8 rounded bg-amber-950/60 text-amber-400 flex items-center justify-center">
+            <Lock className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-[10px] uppercase text-slate-400">E2E Mesh Encryption</div>
+            <div className="font-bold text-amber-400">{isEncrypted ? 'AES-GCM 256 Active' : 'Disabled'}</div>
           </div>
         </div>
 
