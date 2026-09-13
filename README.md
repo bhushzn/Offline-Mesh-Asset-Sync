@@ -219,14 +219,22 @@ Run the full Vitest automated unit and integration suite:
 ```bash
 npm test
 ```
-*Output: 20/20 tests passing across 4 test suites:*
-- `crdtEngine.test.ts` (HLC ordering, canonical JSON, SHA-256 op hashing, LWW conflict resolution)
+*Output: 23/23 tests passing across 5 test suites:*
+- `bleTransport.test.ts` (Native BLE GATT framing, 180-byte burst chunking & multi-hop store-and-forward mesh routing)
+- `crdtEngine.test.ts` (HLC ordering, canonical JSON, SHA-256 op hashing, deterministic LWW conflict resolution)
 - `offlineSync.test.ts` (Vector clock delta calculation, tie-breaking, roll call muster merging, checklist state merging)
-- `rollCallMapper.test.ts` & `personnelMapper.test.ts`
+- `hlc.test.ts` & `crdt.test.ts` (Logical clock drift tolerance and state convergence)
 
 To compile production bundles:
 ```bash
 npm run build
+```
+
+To compile native Android APK:
+```bash
+cd android
+./gradlew assembleDebug
+# Output: android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
 ---
@@ -289,6 +297,14 @@ npm run build
 
 ## 🧪 Evaluation & Demo Walkthrough (For Judges)
 
+### Track A: Genuine Phone-to-Phone Native BLE Field Demo (Zero Laptop / Zero Internet)
+1. **Physical Phones**: Install `FIELDLINK-tacticalmesh-debug.apk` on two Android phones (Phone A & Phone B).
+2. **Sever All External Connections**: Turn **OFF** Wi-Fi, turn **OFF** Mobile Data, turn **ON** Bluetooth on both phones.
+3. **P2P Discovery**: Launch FIELDLINK. Both phones automatically initialize a local GATT server and scanner, discovering each other within seconds.
+4. **Instant P2P Message**: In **Sync Center**, tap **`[SEND TEST MESSAGE]`** on Phone A. Phone B immediately chimes and displays the message in its live packet feed!
+5. **Real Offline Asset Sync**: Edit an asset or deploy a drone on Phone A. Phone B updates its view in real time over BLE with zero server or laptop intermediary!
+
+### Track B: Multi-Device LAN WebRTC Demo (Laptop + Mobile)
 1. **Multi-Node Simulation**: Open two split browser windows at `http://localhost:5173` (Node Alpha and Node Bravo).
 2. **Offline Mutation**: On Node Alpha, mark personnel as *Injured* in the **Muster Roll** view. Observe instant local IndexedDB update.
 3. **P2P Synchronization**: Witness sub-second convergence on Node Bravo without contacting any central server.
