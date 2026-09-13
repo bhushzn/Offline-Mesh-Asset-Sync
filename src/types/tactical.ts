@@ -188,7 +188,7 @@ export interface DeviceMetadata {
   deviceName: string;
   operatorName: string;
   role: string;
-  nodeType: 'North Node' | 'Delta Patrol' | 'Relay Gateway' | 'Command Hub';
+  nodeType: 'North Node' | 'Delta Patrol' | 'Relay Gateway' | 'Command Hub' | 'Field Node';
   status: 'online' | 'offline' | 'syncing';
   batteryLevel: number;
   isTrusted: boolean;
@@ -264,6 +264,7 @@ export type SyncMessageType =
   | 'SYNC_ACK'
   | 'SYNC_COMPLETE'
   | 'HEARTBEAT'
+  | 'TEST_PING'
   | 'ERROR';
 
 export interface SyncMessage<T = any> {
@@ -332,6 +333,7 @@ export interface AuditEvent {
     | 'AUTH_VERIFIED'
     | 'PACKET_FORWARDED'
     | 'OFFLINE_FALLBACK'
+    | 'PEER_MESSAGE'
     | 'ERROR';
   entityType?: string;
   entityId?: string;

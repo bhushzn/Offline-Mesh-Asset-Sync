@@ -6,17 +6,23 @@ import { offlineStorage, STORES } from './offlineStorageService';
 import { CRDTOperation, SyncQueueItem, SyncQueueState, SyncStatus } from '../types/tactical';
 import { CRDTEngine, HybridLogicalClock } from './crdtService';
 import { auditLog } from './auditLogService';
+import { deviceIdentity } from './deviceIdentityService';
 
 class SyncQueueService {
-  private localDeviceId = 'device-a17';
+  private localDeviceId: string;
   private localLamport = 1;
   private hlc: HybridLogicalClock;
-  private vectorClock: Record<string, number> = { 'device-a17': 1 };
+  private vectorClock: Record<string, number>;
   private listeners: Set<(pendingCount: number, queue: SyncQueueItem[]) => void> = new Set();
   private inMemoryQueue: Map<string, SyncQueueItem> = new Map();
 
   constructor() {
+    this.localDeviceId = deviceIdentity.getDeviceId();
     this.hlc = new HybridLogicalClock(this.localDeviceId);
+    this.vectorClock = { [this.localDeviceId]: 1 };
+    deviceIdentity.subscribe((meta) => {
+      this.setDeviceId(meta.deviceId);
+    });
     this.initQueueAndClock();
   }
 

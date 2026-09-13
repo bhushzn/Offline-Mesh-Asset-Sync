@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">FIELDLINK</string>
+    <string name="title_activity_main">FIELDLINK</string>
+    <string name="package_name">com.fieldlink.tacticalmesh</string>
+    <string name="custom_url_scheme">com.fieldlink.tacticalmesh</string>
+</resources>

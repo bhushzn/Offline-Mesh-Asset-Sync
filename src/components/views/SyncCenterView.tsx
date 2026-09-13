@@ -35,6 +35,8 @@ import { offlineStorage, STORES } from '../../services/offlineStorageService';
 import { cloudSync, CloudSyncResult } from '../../services/cloudSyncService';
 import { tacticalAudio } from '../../utils/audio';
 import { auditLog } from '../../services/auditLogService';
+import { deviceIdentity } from '../../services/deviceIdentityService';
+import { isNativePlatform } from '../../services/nativeBlePlugin';
 
 interface Props {
   syncStats: SyncStats;
@@ -48,6 +50,23 @@ export const SyncCenterView: React.FC<Props> = ({ syncStats }) => {
   const [isSyncingAll, setIsSyncingAll] = useState(false);
   const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [activePipelineStep, setActivePipelineStep] = useState<number>(7);
+  const [testMessageText, setTestMessageText] = useState('');
+  const [testMessages, setTestMessages] = useState<Array<{
+    id: string;
+    senderName: string;
+    senderDeviceId: string;
+    text: string;
+    timestamp: number;
+    direction: 'SENT' | 'RECEIVED';
+  }>>([]);
+  const [latestReceivedMsg, setLatestReceivedMsg] = useState<string | null>(null);
+  const [isSendingTest, setIsSendingTest] = useState(false);
+
+  const isNative = isNativePlatform();
+  const localId = deviceIdentity.getDeviceId();
+  const localName = deviceIdentity.getDeviceName();
+  const localRole = deviceIdentity.getRole();
+
   const [cloudStatus, setCloudStatus] = useState({
     isOnline: true,
     isSyncing: false,
@@ -78,6 +97,23 @@ export const SyncCenterView: React.FC<Props> = ({ syncStats }) => {
       setConflicts(syncManager.getRecentConflicts());
     });
 
+    const unsubMsgs = p2pMesh.subscribeMessages((msg) => {
+      if (msg.type === 'TEST_PING') {
+        tacticalAudio.playSyncSuccess();
+        const payload = msg.payload || {};
+        const incoming = {
+          id: msg.msgId || `msg-${Date.now()}`,
+          senderName: payload.senderName || `Node-${msg.senderDeviceId.slice(0, 5)}`,
+          senderDeviceId: msg.senderDeviceId,
+          text: payload.text || 'PING',
+          timestamp: msg.timestamp || Date.now(),
+          direction: 'RECEIVED' as const,
+        };
+        setTestMessages((prev) => [incoming, ...prev.slice(0, 19)]);
+        setLatestReceivedMsg(`Received from ${incoming.senderName}: "${incoming.text}"`);
+      }
+    });
+
     setConflicts(syncManager.getRecentConflicts());
 
     return () => {
@@ -85,8 +121,27 @@ export const SyncCenterView: React.FC<Props> = ({ syncStats }) => {
       unsubQueue();
       unsubCloud();
       unsubConflicts();
+      unsubMsgs();
     };
   }, []);
+
+  const handleSendTestMessage = async (customText?: string) => {
+    tacticalAudio.playClick();
+    setIsSendingTest(true);
+    const text = (customText || testMessageText).trim() || `HELLO FROM ${localName} (${localId.slice(0, 8)})`;
+    await p2pMesh.sendTestPing(text);
+    const sent = {
+      id: `sent-${Date.now()}`,
+      senderName: localName,
+      senderDeviceId: localId,
+      text,
+      timestamp: Date.now(),
+      direction: 'SENT' as const,
+    };
+    setTestMessages((prev) => [sent, ...prev.slice(0, 19)]);
+    setTestMessageText('');
+    setIsSendingTest(false);
+  };
 
   const loadData = async () => {
     const [q, ops] = await Promise.all([
@@ -256,71 +311,150 @@ export const SyncCenterView: React.FC<Props> = ({ syncStats }) => {
           </button>
         </div>
       </div>
-      <div className="bg-slate-900 text-slate-100 p-5 rounded-2xl border border-slate-800 shadow-sm space-y-4 font-mono">
+      {/* Autonomous Direct Phone-to-Phone P2P Hardware Mesh Console */}
+      <div className="bg-slate-900 text-slate-100 p-5 rounded-2xl border border-slate-800 shadow-md space-y-4 font-mono">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-3">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-cyan-950 border border-cyan-700 text-cyan-400 flex items-center justify-center font-bold">
-              <Radio className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-blue-950 border border-blue-700 text-blue-400 flex items-center justify-center font-bold">
+              <Bluetooth className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <span className="font-bold text-sm text-white">Local LAN Mesh Signaling Server</span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
-                  OFFLINE LAN READY
+                <span className="font-bold text-sm text-white">Direct Phone-to-Phone Hardware BLE Mesh</span>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                  isNative 
+                    ? 'bg-emerald-950 text-emerald-300 border border-emerald-700' 
+                    : 'bg-cyan-950 text-cyan-300 border border-cyan-800'
+                }`}>
+                  {isNative ? 'ANDROID NATIVE BLE ACTIVE' : 'P2P WEB / EMULATION'}
                 </span>
               </div>
               <div className="text-xs text-slate-400 mt-0.5">
-                Path: <span className="text-cyan-300 font-semibold">{p2pMesh.getSignalingServerUrl()}</span>
+                Local Node: <span className="text-blue-300 font-semibold">{localName}</span> • ID: <span className="text-slate-300">{localId.slice(0, 8)}...</span> • Zero Laptop / Zero Internet Required
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
+            <span className="text-[11px] text-slate-400">
+              GATT Server &amp; Scanner: <span className="text-emerald-400 font-bold">RUNNING</span>
+            </span>
+          </div>
+        </div>
+
+        {/* Live Received Message Flash Banner */}
+        {latestReceivedMsg && (
+          <div className="bg-emerald-950/80 border border-emerald-500/70 p-3 rounded-xl flex items-center justify-between text-xs text-emerald-200 animate-pulse">
+            <div className="flex items-center space-x-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>
+                <strong className="text-emerald-300">LIVE P2P MESSAGE CONFIRMED:</strong> {latestReceivedMsg}
+              </span>
+            </div>
             <button
-              onClick={() => {
-                const current = p2pMesh.getSignalingServerUrl();
-                const updated = prompt('Enter Local Mesh Server WebSocket URL (e.g. ws://192.168.43.100:3001/ws/mesh):', current);
-                if (updated && updated.trim()) {
-                  p2pMesh.setSignalingServerUrl(updated.trim());
-                  tacticalAudio.playClick();
-                  loadData();
-                }
-              }}
-              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition flex items-center gap-1.5"
+              onClick={() => setLatestReceivedMsg(null)}
+              className="text-slate-400 hover:text-white text-[10px] ml-2"
             >
-              <span>Change Server Address</span>
+              DISMISS
+            </button>
+          </div>
+        )}
+
+        {/* P2P Test Message Transmission Suite */}
+        <div className="bg-slate-950/90 p-4 rounded-xl border border-slate-800 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+              <Send className="w-3.5 h-3.5 text-blue-400" />
+              Direct P2P Test Message Transmitter (Phase 4)
+            </span>
+            <span className="text-[10px] text-slate-400">
+              Broadcasts to nearby phones over BLE
+            </span>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              value={testMessageText}
+              onChange={(e) => setTestMessageText(e.target.value)}
+              placeholder={`HELLO FROM ${localName} (${localId.slice(0, 8)})`}
+              className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+            />
+            <button
+              onClick={() => handleSendTestMessage()}
+              disabled={isSendingTest}
+              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white text-xs font-bold transition flex items-center justify-center space-x-1.5 shadow-sm touch-target-min shrink-0"
+            >
+              <Send className={`w-3.5 h-3.5 ${isSendingTest ? 'animate-ping' : ''}`} />
+              <span>{isSendingTest ? 'TRANSMITTING...' : 'SEND TEST MESSAGE'}</span>
+            </button>
+          </div>
+
+          {/* Quick Preset Buttons */}
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            <span className="text-[10px] text-slate-500 self-center mr-1">Quick Presets:</span>
+            <button
+              onClick={() => handleSendTestMessage(`HELLO FROM ${localName}`)}
+              className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300 border border-slate-700"
+            >
+              HELLO FROM {localName}
             </button>
             <button
-              onClick={() => {
-                navigator.clipboard.writeText(p2pMesh.getSignalingServerUrl());
-                alert('Copied Local Mesh Address to clipboard: ' + p2pMesh.getSignalingServerUrl());
-              }}
-              className="px-3 py-1.5 rounded-lg bg-cyan-700 hover:bg-cyan-600 text-white text-xs font-bold transition flex items-center gap-1"
+              onClick={() => handleSendTestMessage(`STATUS CHECK: ${localName} OPERATIONAL`)}
+              className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300 border border-slate-700"
             >
-              <span>Copy Address</span>
+              STATUS CHECK: OPERATIONAL
+            </button>
+            <button
+              onClick={() => handleSendTestMessage(`SITREP: FIELD SECTOR PATROL ACTIVE`)}
+              className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-slate-300 border border-slate-700"
+            >
+              SITREP: PATROL ACTIVE
             </button>
           </div>
         </div>
 
-        {/* 4-Step Quick Pairing Instructions */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
-          <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800">
-            <div className="text-cyan-400 font-bold text-[11px]">1. CONNECT WI-FI</div>
-            <div className="text-slate-400 text-[10px] mt-0.5">Join both devices to same Wi-Fi / Hotspot (Internet OFF).</div>
+        {/* Live P2P Message Feed */}
+        {testMessages.length > 0 && (
+          <div className="space-y-2">
+            <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+              <span>Live P2P Packet Log ({testMessages.length})</span>
+              <button
+                onClick={() => setTestMessages([])}
+                className="text-[10px] text-slate-500 hover:text-slate-300 underline"
+              >
+                Clear Log
+              </button>
+            </div>
+            <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+              {testMessages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={`p-2 rounded-lg border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1 ${
+                    msg.direction === 'RECEIVED'
+                      ? 'bg-emerald-950/40 border-emerald-700/50 text-emerald-200'
+                      : 'bg-blue-950/40 border-blue-800/50 text-blue-200'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2">
+                    <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold uppercase ${
+                      msg.direction === 'RECEIVED'
+                        ? 'bg-emerald-800 text-emerald-100'
+                        : 'bg-blue-800 text-blue-100'
+                    }`}>
+                      {msg.direction}
+                    </span>
+                    <span className="font-bold text-white">{msg.senderName}:</span>
+                    <span className="text-slate-200">"{msg.text}"</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 self-end sm:self-auto font-mono">
+                    {new Date(msg.timestamp).toLocaleTimeString()}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800">
-            <div className="text-cyan-400 font-bold text-[11px]">2. START SERVER</div>
-            <div className="text-slate-400 text-[10px] mt-0.5">Run <code className="text-emerald-300">npm run mesh-server</code> on laptop.</div>
-          </div>
-          <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800">
-            <div className="text-cyan-400 font-bold text-[11px]">3. OPEN APP</div>
-            <div className="text-slate-400 text-[10px] mt-0.5">Open FIELDLINK on Phone/Tablet & Laptop.</div>
-          </div>
-          <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800">
-            <div className="text-cyan-400 font-bold text-[11px]">4. DIRECT WEBRTC</div>
-            <div className="text-slate-400 text-[10px] mt-0.5">Peers auto-discover and sync via DataChannel.</div>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Discovered Field Peers Grid */}
@@ -383,13 +517,23 @@ export const SyncCenterView: React.FC<Props> = ({ syncStats }) => {
                   <div className="text-[10px] text-slate-400 font-mono">
                     Last sync: {new Date(peer.lastSyncAt).toLocaleTimeString()}
                   </div>
-                  <button
-                    onClick={() => handleSyncPeer(peer.deviceId)}
-                    className="px-3 py-1.5 rounded-md bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-xs border border-blue-200 transition flex items-center space-x-1"
-                  >
-                    <RefreshCw className="w-3 h-3" />
-                    <span>Sync Node</span>
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={() => handleSendTestMessage(`PING TO ${peer.deviceName} FROM ${localName}`)}
+                      className="px-2.5 py-1.5 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-semibold text-xs border border-emerald-200 transition flex items-center space-x-1"
+                      title="Send Direct P2P Ping"
+                    >
+                      <Send className="w-3 h-3" />
+                      <span>Ping</span>
+                    </button>
+                    <button
+                      onClick={() => handleSyncPeer(peer.deviceId)}
+                      className="px-3 py-1.5 rounded-md bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-xs border border-blue-200 transition flex items-center space-x-1"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>Sync</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             ))

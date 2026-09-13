@@ -14,6 +14,7 @@ import { encryptMeshPayload, decryptMeshPayload, EncryptedPayload, sha256Hex } f
 import { TransportManager } from './transports/TransportManager';
 import { MeshRouter } from './meshRouter';
 import { auditLog } from './auditLogService';
+import { deviceIdentity } from './deviceIdentityService';
 
 type PeerListener = (peers: PeerNode[]) => void;
 type SyncMsgListener = (msg: SyncMessage) => void;
@@ -30,14 +31,15 @@ class P2PMeshService {
   private mode: OperatingMode = 'FIELD_MODE';
 
   constructor() {
-    const isMobile = typeof window !== 'undefined' && (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || window.innerWidth < 768);
-    const defaultId = isMobile ? 'device-b04' : 'device-a17';
-    const defaultName = isMobile ? 'B-04 / DELTA PATROL' : 'A-17 / NORTH NODE';
-    const defaultRole = isMobile ? 'Scout Lead' : 'Field Lead';
+    this.localDeviceId = deviceIdentity.getDeviceId();
+    this.localDeviceName = deviceIdentity.getDeviceName();
+    this.localRole = deviceIdentity.getRole();
 
-    this.localDeviceId = (typeof localStorage !== 'undefined' && localStorage.getItem('fieldlink_device_id')) || defaultId;
-    this.localDeviceName = (typeof localStorage !== 'undefined' && localStorage.getItem('fieldlink_device_name')) || defaultName;
-    this.localRole = defaultRole;
+    deviceIdentity.subscribe((meta) => {
+      this.localDeviceId = meta.deviceId;
+      this.localDeviceName = meta.deviceName;
+      this.localRole = meta.role;
+    });
 
     const defaultWs = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
       ? `ws://${window.location.hostname}:3001/ws/mesh`
@@ -289,9 +291,40 @@ class P2PMeshService {
       });
     }
 
+    if (finalMsg.type === 'TEST_PING') {
+      auditLog.log({
+        deviceId: finalMsg.senderDeviceId,
+        eventType: 'PEER_MESSAGE',
+        details: `P2P Direct Ping received from ${finalMsg.payload?.senderName || finalMsg.senderDeviceId}: "${finalMsg.payload?.text || 'PING'}"`,
+        severity: 'SUCCESS' as any,
+      });
+    }
+
     for (const listener of this.msgListeners) {
       listener(finalMsg);
     }
+  }
+
+  /**
+   * Broadcasts a direct P2P test ping message across BLE/WebRTC mesh.
+   */
+  public async sendTestPing(customText?: string): Promise<{ success: boolean; text: string }> {
+    const text = customText || `HELLO FROM ${this.localDeviceName} (${this.localDeviceId.slice(0, 8)})`;
+    auditLog.log({
+      deviceId: this.localDeviceId,
+      eventType: 'PEER_MESSAGE',
+      details: `Dispatched P2P Test Message: "${text}"`,
+      severity: 'INFO',
+    });
+
+    await this.broadcast('TEST_PING', {
+      text,
+      sentAt: Date.now(),
+      senderName: this.localDeviceName,
+      senderDeviceId: this.localDeviceId,
+    });
+
+    return { success: true, text };
   }
 
   private startDiscoveryBeacon() {

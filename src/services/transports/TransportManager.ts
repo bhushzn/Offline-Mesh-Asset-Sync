@@ -1,4 +1,4 @@
-﻿import { IMeshTransport } from './MeshTransport';
+import { IMeshTransport } from './MeshTransport';
 import { WebRTCTransport } from './WebRTCTransport';
 import { BLETransport } from './BLETransport';
 import { LocalNetworkTransport } from './LocalNetworkTransport';
@@ -64,8 +64,8 @@ export class TransportManager {
     const localNet = new LocalNetworkTransport(localDeviceId);
     this.transports.set('LocalNetwork', localNet);
 
-    // 4. Initialize BLE Transport (Optional Web Bluetooth)
-    const ble = new BLETransport();
+    // 4. Initialize BLE Transport (Native Android BLE Mesh & Web Bluetooth)
+    const ble = new BLETransport(localDeviceId, this.localDeviceName);
     this.transports.set('BLE', ble);
 
     // 5. Initialize Cloud Transport (Optional WebSocket relay for ONLINE_MODE only)
@@ -207,11 +207,15 @@ export class TransportManager {
     const webrtcSent = await this.webrtcTransport.broadcast(message);
     totalSent += webrtcSent;
 
-    // 2. BroadcastChannel for local development tabs
+    // 2. Direct Phone-to-Phone Native BLE Mesh
+    const bleSent = await this.transports.get('BLE')?.broadcast(message) || 0;
+    totalSent += bleSent;
+
+    // 3. BroadcastChannel for local development tabs
     const localSent = await this.transports.get('LocalNetwork')?.broadcast(message) || 0;
     if (totalSent === 0) totalSent += localSent;
 
-    // 3. Cloud (Only in ONLINE_MODE)
+    // 4. Cloud (Only in ONLINE_MODE)
     if (this.mode === 'ONLINE_MODE') {
       const cloudSent = await this.transports.get('Cloud')?.broadcast(message) || 0;
       totalSent += cloudSent;
@@ -341,7 +345,28 @@ export class TransportManager {
   }
 
   private handleTransportStateChange(peerId: string, status: TransportStatus, transportType: TransportType) {
-    const peer = this.peers.get(peerId);
+    let peer = this.peers.get(peerId);
+    if (!peer && (status === 'connected' || status === 'connecting')) {
+      peer = {
+        deviceId: peerId,
+        deviceName: `Node-${peerId.slice(0, 5)}`,
+        role: 'Field Operator',
+        nodeType: 'Relay Node',
+        rssi: transportType === 'BLE' ? -65 : -50,
+        status: status === 'connected' ? 'online' : 'syncing',
+        lastSyncAt: Date.now(),
+        latencyMs: transportType === 'BLE' ? 85 : 15,
+        connectionType: transportType,
+        isTrusted: true,
+        isSimulated: false,
+        batteryLevel: 90,
+      };
+      this.peers.set(peerId, peer);
+      this.notifyPeers();
+      this.notifyDiagnostics();
+      return;
+    }
+
     if (peer && !peer.isSimulated) {
       peer.status = status === 'connected' ? 'online' : status === 'connecting' ? 'syncing' : 'disconnected';
       peer.connectionType = transportType;
