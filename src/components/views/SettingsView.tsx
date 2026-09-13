@@ -181,14 +181,14 @@ export const SettingsView: React.FC<Props> = ({
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs text-slate-600">Charge Level:</span>
-              <span className="text-base font-bold font-mono text-slate-900">{Math.round(batteryInfo.level * 100)}%</span>
+              <span className="text-base font-bold font-mono text-slate-900">{Math.round(batteryInfo.level)}%</span>
             </div>
             <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
               <div
                 className={`h-full transition-all ${
-                  batteryInfo.level > 0.4 ? 'bg-emerald-500' : batteryInfo.level > 0.2 ? 'bg-amber-500' : 'bg-rose-500'
+                  batteryInfo.level > 40 ? 'bg-emerald-500' : batteryInfo.level > 20 ? 'bg-amber-500' : 'bg-rose-500'
                 }`}
-                style={{ width: `${Math.round(batteryInfo.level * 100)}%` }}
+                style={{ width: `${Math.min(100, Math.max(0, Math.round(batteryInfo.level)))}%` }}
               />
             </div>
             <div className="flex items-center justify-between text-xs font-mono text-slate-500 pt-1">
