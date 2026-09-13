@@ -132,6 +132,7 @@ export function App() {
               syncStats={syncStats}
               activeDevice={activeDevice}
               mode={mode}
+              onToggleMode={handleToggleMode}
             />
           )}
           {activeTab === 'assets' && <AssetsView />}

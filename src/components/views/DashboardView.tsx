@@ -43,6 +43,7 @@ import { MeshTopology3D } from '../mesh/MeshTopology3D';
 import { NetworkStatusBar } from '../common/NetworkStatusBar';
 import { tacticalAudio } from '../../utils/audio';
 import { ActiveTab } from '../layout/Sidebar';
+import { ConnectionStatusCard } from '../dashboard/ConnectionStatusCard';
 
 interface Props {
   onNavigate: (tab: ActiveTab) => void;
@@ -50,6 +51,7 @@ interface Props {
   syncStats: SyncStats;
   activeDevice: DeviceMetadata;
   mode?: OperatingMode;
+  onToggleMode?: (newMode: OperatingMode) => void;
 }
 
 export const DashboardView: React.FC<Props> = ({
@@ -58,6 +60,7 @@ export const DashboardView: React.FC<Props> = ({
   syncStats,
   activeDevice,
   mode = 'FIELD_MODE',
+  onToggleMode,
 }) => {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [personnel, setPersonnel] = useState<Personnel[]>([]);
@@ -108,6 +111,13 @@ export const DashboardView: React.FC<Props> = ({
     <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
       {/* 0. Real Network Status Diagnostic Bar (Proves Offline Mesh Status Instantly) */}
       <NetworkStatusBar mode={mode} />
+
+      {/* 0.5 Real-Time Mesh Connection Status & Link Verification Processor */}
+      <ConnectionStatusCard
+        mode={mode}
+        onToggleMode={onToggleMode}
+        onNavigateToSync={() => onNavigate('sync')}
+      />
 
       {/* 1. Tactical Command Operations Summary Bar (Answers 8 Operational Questions Instantly) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
