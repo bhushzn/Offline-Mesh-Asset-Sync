@@ -1,5 +1,5 @@
-import { IMeshTransport, TransportMessageListener, TransportStateListener } from './MeshTransport';
-import { TransportCapabilities, TransportStatus, TransportType } from '../../types/tactical';
+﻿import { IMeshTransport, TransportMessageListener, TransportStateListener } from './MeshTransport';
+import { OperatingMode, TransportCapabilities, TransportStatus, TransportType } from '../../types/tactical';
 
 interface PeerConnectionWrapper {
   peerId: string;
@@ -8,6 +8,7 @@ interface PeerConnectionWrapper {
   status: TransportStatus;
   lastPing: number;
   lastPong: number;
+  isInitiator: boolean;
 }
 
 export class WebRTCTransport implements IMeshTransport {
@@ -17,29 +18,45 @@ export class WebRTCTransport implements IMeshTransport {
   private stateListeners = new Set<TransportStateListener>();
   private status: TransportStatus = 'available';
   private localDeviceId: string;
-  private signalingChannel?: (targetPeerId: string, signal: any) => void;
+  private mode: OperatingMode = 'FIELD_MODE';
+  private signalingSender?: (targetPeerId: string, signal: any) => void;
   private heartbeatInterval: any = null;
 
-  // Standard STUN servers for NAT traversal with offline LAN fallback
-  private rtcConfig: RTCConfiguration = {
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-    ],
-  };
-
-  constructor(localDeviceId: string, signalingSender?: (targetPeerId: string, signal: any) => void) {
+  constructor(
+    localDeviceId: string, 
+    signalingSender?: (targetPeerId: string, signal: any) => void,
+    mode: OperatingMode = 'FIELD_MODE'
+  ) {
     this.localDeviceId = localDeviceId;
-    this.signalingChannel = signalingSender;
+    this.signalingSender = signalingSender;
+    this.mode = mode;
     this.startHeartbeat();
   }
 
+  public setMode(newMode: OperatingMode) {
+    this.mode = newMode;
+  }
+
   public setSignalingSender(sender: (targetPeerId: string, signal: any) => void) {
-    this.signalingChannel = sender;
+    this.signalingSender = sender;
+  }
+
+  private getRTCConfiguration(): RTCConfiguration {
+    // In FIELD_MODE (offline), DO NOT require or ping public STUN servers!
+    // Empty iceServers forces WebRTC to use local LAN host candidates immediately without timeout.
+    if (this.mode === 'FIELD_MODE') {
+      return { iceServers: [] };
+    }
+    return {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+      ],
+    };
   }
 
   public getStatus(): TransportStatus {
-    return this.status;
+    return this.connections.size > 0 ? 'connected' : this.status;
   }
 
   public getCapabilities(): TransportCapabilities {
@@ -48,10 +65,12 @@ export class WebRTCTransport implements IMeshTransport {
       type: 'WebRTC',
       isAvailable: isSupported,
       isSupported,
-      latencyMs: 15,
-      bandwidthKbps: 5000,
+      latencyMs: 12,
+      bandwidthKbps: 15000,
       mtuBytes: 65535,
-      notes: 'Encrypted browser-to-browser P2P DataChannels',
+      notes: this.mode === 'FIELD_MODE' 
+        ? 'Direct P2P DataChannels (Offline LAN Mode · 0ms STUN delay)' 
+        : 'Direct P2P DataChannels (Online STUN Mode)',
     };
   }
 
@@ -59,14 +78,37 @@ export class WebRTCTransport implements IMeshTransport {
     return Array.from(this.connections.keys());
   }
 
+  public getConnectedPeerIds(): string[] {
+    const connected: string[] = [];
+    for (const [peerId, wrap] of this.connections) {
+      if (wrap.dc && wrap.dc.readyState === 'open') {
+        connected.push(peerId);
+      }
+    }
+    return connected;
+  }
+
+  public isPeerConnected(peerId: string): boolean {
+    const wrap = this.connections.get(peerId);
+    return !!(wrap && wrap.dc && wrap.dc.readyState === 'open');
+  }
+
   public async connect(peerId: string): Promise<boolean> {
     if (typeof window === 'undefined' || !('RTCPeerConnection' in window)) {
       return false;
     }
+    if (peerId === this.localDeviceId) return false;
+
+    // Check if already open
+    const existing = this.connections.get(peerId);
+    if (existing && existing.dc && existing.dc.readyState === 'open') {
+      return true;
+    }
 
     try {
       this.closePeer(peerId);
-      const pc = new RTCPeerConnection(this.rtcConfig);
+      const config = this.getRTCConfiguration();
+      const pc = new RTCPeerConnection(config);
       const dc = pc.createDataChannel('fieldlink-mesh-sync', {
         ordered: true,
       });
@@ -78,6 +120,7 @@ export class WebRTCTransport implements IMeshTransport {
         status: 'connecting',
         lastPing: Date.now(),
         lastPong: Date.now(),
+        isInitiator: true,
       };
 
       this.connections.set(peerId, wrapper);
@@ -87,8 +130,8 @@ export class WebRTCTransport implements IMeshTransport {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      if (this.signalingChannel) {
-        this.signalingChannel(peerId, {
+      if (this.signalingSender) {
+        this.signalingSender(peerId, {
           type: 'OFFER',
           sdp: offer,
           senderDeviceId: this.localDeviceId,
@@ -97,7 +140,7 @@ export class WebRTCTransport implements IMeshTransport {
 
       return true;
     } catch (err) {
-      console.error(`[WebRTC] Failed to connect to ${peerId}:`, err);
+      console.error(`[WebRTC] Connect failure to ${peerId}:`, err);
       this.notifyState(peerId, 'disconnected');
       return false;
     }
@@ -115,13 +158,14 @@ export class WebRTCTransport implements IMeshTransport {
         await this.handleIceCandidate(peerId, signal.candidate);
       }
     } catch (err) {
-      console.error(`[WebRTC] Signal handling error with ${peerId}:`, err);
+      console.warn(`[WebRTC] Signal handling error from ${peerId}:`, err);
     }
   }
 
   private async handleOffer(peerId: string, sdp: RTCSessionDescriptionInit) {
     this.closePeer(peerId);
-    const pc = new RTCPeerConnection(this.rtcConfig);
+    const config = this.getRTCConfiguration();
+    const pc = new RTCPeerConnection(config);
 
     const wrapper: PeerConnectionWrapper = {
       peerId,
@@ -129,6 +173,7 @@ export class WebRTCTransport implements IMeshTransport {
       status: 'connecting',
       lastPing: Date.now(),
       lastPong: Date.now(),
+      isInitiator: false,
     };
     this.connections.set(peerId, wrapper);
 
@@ -143,8 +188,8 @@ export class WebRTCTransport implements IMeshTransport {
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
-    if (this.signalingChannel) {
-      this.signalingChannel(peerId, {
+    if (this.signalingSender) {
+      this.signalingSender(peerId, {
         type: 'ANSWER',
         sdp: answer,
         senderDeviceId: this.localDeviceId,
@@ -154,20 +199,26 @@ export class WebRTCTransport implements IMeshTransport {
 
   private async handleAnswer(peerId: string, sdp: RTCSessionDescriptionInit) {
     const wrapper = this.connections.get(peerId);
-    if (!wrapper) return;
-    await wrapper.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    if (!wrapper || !wrapper.pc) return;
+    if (wrapper.pc.signalingState === 'have-local-offer') {
+      await wrapper.pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    }
   }
 
   private async handleIceCandidate(peerId: string, candidate: RTCIceCandidateInit) {
     const wrapper = this.connections.get(peerId);
-    if (!wrapper || !candidate) return;
-    await wrapper.pc.addIceCandidate(new RTCIceCandidate(candidate));
+    if (!wrapper || !candidate || !wrapper.pc) return;
+    try {
+      await wrapper.pc.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch {
+      // ignore candidate error if connection already established
+    }
   }
 
   private setupPeerConnection(peerId: string, pc: RTCPeerConnection) {
     pc.onicecandidate = (event) => {
-      if (event.candidate && this.signalingChannel) {
-        this.signalingChannel(peerId, {
+      if (event.candidate && this.signalingSender) {
+        this.signalingSender(peerId, {
           type: 'ICE',
           candidate: event.candidate,
           senderDeviceId: this.localDeviceId,
@@ -180,6 +231,7 @@ export class WebRTCTransport implements IMeshTransport {
       if (state === 'connected') {
         const wrap = this.connections.get(peerId);
         if (wrap) wrap.status = 'connected';
+        this.status = 'connected';
         this.notifyState(peerId, 'connected');
       } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
         this.notifyState(peerId, 'disconnected');
@@ -200,7 +252,9 @@ export class WebRTCTransport implements IMeshTransport {
       try {
         const parsed = JSON.parse(event.data);
         if (parsed.__ping) {
-          dc.send(JSON.stringify({ __pong: true, timestamp: Date.now() }));
+          try {
+            dc.send(JSON.stringify({ __pong: true, timestamp: Date.now() }));
+          } catch {}
           return;
         }
         if (parsed.__pong) {
@@ -222,7 +276,7 @@ export class WebRTCTransport implements IMeshTransport {
     };
 
     dc.onerror = (err) => {
-      console.warn(`[WebRTC] DC error with ${peerId}:`, err);
+      console.warn(`[WebRTC] DC error on ${peerId}:`, err);
       this.notifyState(peerId, 'disconnected');
     };
   }
@@ -276,14 +330,16 @@ export class WebRTCTransport implements IMeshTransport {
       const now = Date.now();
       for (const [peerId, wrap] of this.connections) {
         if (wrap.dc && wrap.dc.readyState === 'open') {
-          wrap.dc.send(JSON.stringify({ __ping: true, timestamp: now }));
-          if (now - wrap.lastPong > 30000) {
+          try {
+            wrap.dc.send(JSON.stringify({ __ping: true, timestamp: now }));
+          } catch {}
+          if (now - wrap.lastPong > 35000) {
             console.warn(`[WebRTC] Heartbeat timeout on peer ${peerId}`);
             this.closePeer(peerId);
           }
         }
       }
-    }, 10000);
+    }, 12000);
   }
 
   public onMessage(listener: TransportMessageListener): () => void {

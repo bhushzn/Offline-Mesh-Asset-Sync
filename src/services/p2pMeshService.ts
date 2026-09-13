@@ -97,6 +97,22 @@ class P2PMeshService {
     this.localRole = role;
   }
 
+  public setSignalingServerUrl(url: string) {
+    this.transportManager.setSignalingServerUrl(url);
+  }
+
+  public getSignalingServerUrl(): string {
+    return this.transportManager.getSignalingServerUrl();
+  }
+
+  public getDiagnostics() {
+    return this.transportManager.getDiagnostics();
+  }
+
+  public subscribeDiagnostics(listener: (diag: any) => void): () => void {
+    return this.transportManager.subscribeDiagnostics(listener);
+  }
+
   public getPeers(): PeerNode[] {
     return this.transportManager.getPeers();
   }
