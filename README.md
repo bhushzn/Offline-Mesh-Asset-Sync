@@ -10,7 +10,44 @@
 
 ---
 
-## 📌 Project Overview & Core Mission
+## 📌 Project Metadata & Hackathon Alignment
+
+| Parameter | Details |
+|---|---|
+| **Project Name** | **FIELDLINK (Offline-Mesh-Asset-Sync)** |
+| **Team Name** | **APEX PLATOON** |
+| **Team Members** | **Bhushan Pawar (Team Lead)** · Harshita Bafna · Jaya Chawre · Harsh Tripathi |
+| **Event** | **Engineers 2047 (VISHVA-TECH '26)** — SATI Vidisha |
+| **Domain Track** | **Disaster Management, Defense Logistics & Resilient Public Infrastructure (Viksit Bharat @ 2047)** |
+| **Primary Repository** | [https://github.com/bhushzn/Offline-Mesh-Asset-Sync](https://github.com/bhushzn/Offline-Mesh-Asset-Sync) |
+| **Working Prototype (PWA)** | **[Live Web App (Vercel)](https://offline-mesh-asset-sync.vercel.app/)** • Local PWA (`http://localhost:5173`) |
+| **Evaluation Round** | Round 1 (Desk-Side Technical) & Round 2 (Grand Finale Stage Demos) |
+
+---
+
+## 🇮🇳 Alignment with Viksit Bharat @ 2047
+
+Under the national vision of **Viksit Bharat 2047**, resilient communication infrastructure and sovereign disaster defense systems are vital:
+1. **Disaster Resilience (NDRF / SDRF)**: Ensures continuous situational awareness, casualty muster, and life-saving supply allocation in severed coastal/mountain disaster zones.
+2. **Defense & Border Logistics**: Zero-emission, zero-cloud tactical asset tracking with peer-to-peer cryptographic security (AES-GCM-256).
+3. **Smart & Resilient Cities**: Distributed fault-tolerant infrastructure monitoring that survives urban power and telecommunication blackouts.
+
+---
+
+## ⚡ Hardware Architecture & Bill of Materials (BOM)
+
+FIELDLINK is engineered to run on **Commercial-Off-The-Shelf (COTS) standard hardware** with zero proprietary dependencies:
+
+| Component | Minimum Specification | Supported Hardware / BOM |
+|---|---|---|
+| **Field Terminals** | Any smartphone, tablet, or laptop | COTS Android, iOS, Windows, Linux, macOS |
+| **Local Radios** | Wi-Fi 802.11 b/g/n/ac or Bluetooth 4.2+ | Standard on-board Wi-Fi and Bluetooth chipsets |
+| **Optional Embedded Relay** | Raspberry Pi 4 / ESP32 Gateway | Wi-Fi hotspot or serial packet bridge |
+| **Display Standard** | Responsive mobile touch display | 44px touch targets, daylight-readable light theme |
+
+---
+
+## 📖 Executive Summary & Core Mission
 
 > **FIELDLINK MUST ACTUALLY WORK WITHOUT INTERNET.**
 
@@ -65,7 +102,7 @@ During severe disaster responses, subterranean operations, or tactical deploymen
 ### 2. Installation
 ```bash
 # Clone the repository
-git clone https://github.com/harshtripathi249-sudo/Offline-Mesh-Asset-Sync.git
+git clone https://github.com/bhushzn/Offline-Mesh-Asset-Sync.git
 cd Offline-Mesh-Asset-Sync
 
 # Install dependencies
