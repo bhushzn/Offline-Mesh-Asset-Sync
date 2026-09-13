@@ -148,16 +148,59 @@ npm run build
 
 ---
 
-## 📸 Screenshots & Operational UI
+## 📸 Operational Interface & Screenshots
 
-*(Screenshots will be placed here)*
+### 1. Operations Dashboard & Live 3D Mesh Topology
+![Operations Dashboard](docs/screenshots/dashboard.png)
+*Real-time 73% mission readiness gauge, active node selector, and 3D spatial node mesh visualizer.*
 
-<!-- 
-[PLACEHOLDER: Add Dashboard Screenshot]
-[PLACEHOLDER: Add Muster Roll Screenshot]
-[PLACEHOLDER: Add Sync Center Screenshot]
-[PLACEHOLDER: Add GIS Map Screenshot]
--->
+---
+
+### 2. Tactical Assets & Equipment Accountability
+![Tactical Assets](docs/screenshots/assets.png)
+*Real-time equipment catalog with status badges, sector assignments, and condition tracking.*
+
+---
+
+### 3. Squad Personnel & Live Muster Roll
+![Personnel Muster Roll](docs/screenshots/personnel_muster.png)
+*1-tap rapid roll-call toggling (`Present`, `Absent`, `Injured`) and unit headcount reconciliation.*
+
+---
+
+### 4. Operational Checklists & Procedures
+![Tactical Checklists](docs/screenshots/checklists.png)
+*Interactive protocol execution with step verification and CRDT grow-only completion tracking.*
+
+---
+
+### 5. Emergency Incident Log & SITREP Dispatch
+![Incident Log SITREP](docs/screenshots/incidents_sitrep.png)
+*Real-time incident reporting with severity triage (`Critical`, `High Priority`) and location tags.*
+
+---
+
+### 6. Tactical GIS Map & Spatial Radar
+![Tactical GIS Map](docs/screenshots/tactical_map_gis.png)
+*Interactive sector grid with asset/incident markers, mesh relay links, and GPS coordinate HUD.*
+
+---
+
+### 7. Decentralized Sync Center & CRDT Conflict Log
+![Tactical Sync Center](docs/screenshots/sync_center.png)
+*8-stage synchronization pipeline visualizer, outbound queue, and deterministic CRDT conflict resolution table.*
+
+---
+
+### 8. Immutable Operational Audit Trail
+![Operational Audit Trail](docs/screenshots/audit_trail.png)
+*Tamper-evident local event log recording all mutations, peer connections, and state transitions.*
+
+---
+
+### 9. System Telemetry & Encrypted Vault Settings
+![Settings and System Telemetry](docs/screenshots/settings.png)
+*Node identity configuration, battery status monitoring, AES-GCM 256 encryption status, and vault backup.*
 
 ---
 
