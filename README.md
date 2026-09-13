@@ -21,6 +21,7 @@
 | **Domain Track** | **Disaster Management, Defense Logistics & Resilient Public Infrastructure (Viksit Bharat @ 2047)** |
 | **Primary Repository** | [https://github.com/bhushzn/Offline-Mesh-Asset-Sync](https://github.com/bhushzn/Offline-Mesh-Asset-Sync) |
 | **Working Prototype (PWA)** | **[Live Web App (Vercel)](https://offline-mesh-asset-sync.vercel.app/)** • Local PWA (`http://localhost:5173`) |
+| **Executive Presentation Deck** | **[FIELDLINK Executive Presentation Deck (PDF)](./FIELDLINK_Executive_Presentation_Deck.pdf)** |
 | **Evaluation Round** | Round 1 (Desk-Side Technical) & Round 2 (Grand Finale Stage Demos) |
 
 ---
