@@ -146,6 +146,20 @@ class SyncQueueService {
     });
 
     this.notify();
+
+    // Auto-broadcast real-time mutation across active transports
+    try {
+      const { p2pMesh } = await import('./p2pMeshService');
+      p2pMesh.broadcast(
+        'OPERATION_BATCH',
+        { ops: [crdtOp] },
+        this.getVectorClock(),
+        this.getHLC()
+      ).catch(() => {});
+    } catch {
+      // ignore
+    }
+
     return crdtOp;
   }
 

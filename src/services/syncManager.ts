@@ -197,8 +197,11 @@ class SyncManager {
   // Handle incoming mesh network messages
   private async handleMeshMessage(msg: SyncMessage) {
     const localDeviceId = syncQueue.getDeviceId();
+    const isForMe = !msg.targetDeviceId || msg.targetDeviceId === 'BROADCAST' || msg.targetDeviceId === localDeviceId;
 
-    if (msg.type === 'SYNC_REQUEST' && (!msg.targetDeviceId || msg.targetDeviceId === localDeviceId)) {
+    if (!isForMe) return;
+
+    if (msg.type === 'SYNC_REQUEST') {
       // Remote peer requested missing operations.
       const localOps = await offlineStorage.getAll<CRDTOperation>(STORES.CRDT_OPS);
       const deltaOps = CRDTEngine.calculateMissingOps(localOps, msg.vectorClock || {});
@@ -219,11 +222,22 @@ class SyncManager {
           syncQueue.getVectorClock()
         );
       }
-    } else if (msg.type === 'OPERATION_BATCH' && (!msg.targetDeviceId || msg.targetDeviceId === localDeviceId)) {
+    } else if (msg.type === 'OPERATION_BATCH' || msg.type === 'OPERATION') {
       // Received missing operations. Merge with CRDT.
-      const ops = msg.payload?.ops || [];
-      await this.applyIncomingDelta(ops, msg.senderDeviceId, msg.vectorClock);
-    } else if (msg.type === 'SYNC_ACK' && (!msg.targetDeviceId || msg.targetDeviceId === localDeviceId)) {
+      const ops = msg.payload?.ops || (msg.payload?.operation ? [msg.payload.operation] : []);
+      if (ops.length > 0) {
+        const result = await this.applyIncomingDelta(ops, msg.senderDeviceId, msg.vectorClock);
+        if (result.applied > 0) {
+          // Send ACK back to sender
+          await p2pMesh.sendToPeer(
+            msg.senderDeviceId,
+            'SYNC_ACK',
+            { syncedOpIds: ops.map((o: any) => o.id) },
+            syncQueue.getVectorClock()
+          );
+        }
+      }
+    } else if (msg.type === 'SYNC_ACK') {
       // Remote acknowledged receipt of operations
       const syncedOpIds = msg.payload?.syncedOpIds || [];
       for (const opId of syncedOpIds) {
@@ -235,6 +249,7 @@ class SyncManager {
         details: `Peer ${msg.senderDeviceId} verified and acknowledged ${syncedOpIds.length} operations`,
         severity: 'SUCCESS',
       });
+      await this.recalculateStats();
     }
   }
 
@@ -405,10 +420,42 @@ class SyncManager {
 
   // Trigger sync with all active mesh peers
   public async syncAllPeers(): Promise<void> {
+    const localPendingOps = await syncQueue.getPendingOperations();
+
+    // 1. Broadcast pending operations directly to all channels
+    if (localPendingOps.length > 0) {
+      for (const op of localPendingOps) {
+        await syncQueue.updateItemState(op.id, 'SENDING');
+      }
+
+      await p2pMesh.broadcast(
+        'OPERATION_BATCH',
+        { ops: localPendingOps },
+        syncQueue.getVectorClock(),
+        syncQueue.getHLC()
+      );
+
+      for (const op of localPendingOps) {
+        await syncQueue.updateItemState(op.id, 'SENT');
+      }
+    }
+
+    // 2. Request missing ops from network
+    await p2pMesh.broadcast(
+      'SYNC_REQUEST',
+      { requestTime: Date.now() },
+      syncQueue.getVectorClock(),
+      syncQueue.getHLC()
+    );
+
+    // 3. Sync with specific known peers
     const peers = p2pMesh.getPeers().filter(p => p.status === 'online');
     for (const peer of peers) {
       await this.syncWithPeer(peer.deviceId);
     }
+
+    this.lastSyncTime = Date.now();
+    await this.recalculateStats();
   }
 }
 
