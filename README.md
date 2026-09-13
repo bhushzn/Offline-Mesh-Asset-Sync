@@ -6,7 +6,8 @@
 [![Three.js](https://img.shields.io/badge/Three.js-3D_Mesh-000000?logo=three.js&logoColor=white)](https://threejs.org/)
 [![PWA](https://img.shields.io/badge/PWA-Offline_First-5A0FC8?logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
 [![IndexedDB](https://img.shields.io/badge/IndexedDB-Local_Data_Store-FF6B6B)](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API)
-[![Vitest](https://img.shields.io/badge/Vitest-20_Passed-22C55E?logo=vitest&logoColor=white)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/Vitest-23_Passed-22C55E?logo=vitest&logoColor=white)](https://vitest.dev/)
+[![Android](https://img.shields.io/badge/Android-Native_BLE_P2P-3DDC84?logo=android&logoColor=white)](https://developer.android.com/)
 
 ---
 
@@ -20,6 +21,7 @@
 | **Event** | **Engineers 2047 (VISHVA-TECH '26)** — SATI Vidisha |
 | **Domain Track** | **Disaster Management, Defense Logistics & Resilient Public Infrastructure (Viksit Bharat @ 2047)** |
 | **Primary Repository** | [https://github.com/bhushzn/Offline-Mesh-Asset-Sync](https://github.com/bhushzn/Offline-Mesh-Asset-Sync) |
+| **Android APK Build** | **Native Android P2P BLE Mesh APK** (`android/app/build/outputs/apk/debug/app-debug.apk`) |
 | **Working Prototype (PWA)** | **[Live Web App (Vercel)](https://offline-mesh-asset-sync.vercel.app/)** • Local PWA (`http://localhost:5173`) |
 | **Executive Presentation Deck** | **[FIELDLINK Executive Presentation Deck (PDF)](./FIELDLINK_Executive_Presentation_Deck.pdf)** |
 | **Evaluation Round** | Round 1 (Desk-Side Technical) & Round 2 (Grand Finale Stage Demos) |
@@ -61,30 +63,50 @@ During severe disaster responses, subterranean operations, or tactical deploymen
 ## 🏗️ The Offline-First Architecture
 
 ```
-                    FIELDLINK CLIENT (Device A)
-                                │
-                    ┌───────────┴───────────┐
-                    ▼                       ▼
-            LOCAL APPLICATION       LOCAL LAN DISCOVERY
-                    │                       │
-                INDEXEDDB           LOCAL SIGNALING SERVER
-            (Durable Storage)       (ws://192.168.x.x:3001)
-                    │                       │
-              CRDT OPERATION        WebRTC NEGOTIATION
-              (HLC + SHA-256)         (SDP / Local ICE)
-                    │                       │
-               SYNC QUEUE ──────────► WebRTC DATACHANNEL
-                                            │
-                                            ▼
-                                   NEARBY DEVICE (Device B)
-                                            │
-                                       CRDT MERGE
-                                  (Deterministic LWW)
-                                            │
-                                        INDEXEDDB
-                                            │
-                                        UI UPDATE
+                       FIELDLINK CLIENT (Device A)
+                                   │
+              ┌────────────────────┼────────────────────┐
+              ▼                    ▼                    ▼
+      LOCAL APPLICATION     NATIVE ANDROID BLE    LOCAL LAN DISCOVERY
+              │             (Zero Router/Laptop)        │
+          INDEXEDDB                │            LOCAL SIGNALING SERVER
+      (Durable Storage)     P2P GATT SERVER     (ws://192.168.x.x:3001)
+              │                    │                    │
+        CRDT OPERATION       BLE SCANNER /       WebRTC NEGOTIATION
+        (HLC + SHA-256)      BURST CHUNKS        (SDP / Local ICE)
+              │                    │                    │
+         SYNC QUEUE ───────────────┼────────────────────┼───────────┐
+                                   ▼                                ▼
+                        DIRECT BLE P2P LINK                 WebRTC DATACHANNEL
+                                   │                                │
+                                   └───────────────┬────────────────┘
+                                                   ▼
+                                       FIELDLINK CLIENT (Device B)
+                                                   │
+                                            CRDT ENGINE MERGE
+                                       (Deterministic HLC Ordering)
+                                                   │
+                                                   ▼
+                                        INDEXEDDB MUTATION STORE
 ```
+
+---
+
+## 📱 Native Android Phone-to-Phone BLE Mesh (Zero Laptop / Zero Internet)
+
+FIELDLINK features a native Android Bluetooth Low Energy (BLE) peripheral GATT server and scanner engine (`FieldlinkBlePlugin.java`):
+
+- **True Phone-to-Phone P2P Mesh**: Android devices communicate directly via hardware BLE radios without requiring any laptop, router, cellular signal, or internet connection.
+- **Dual GATT Role**: Each device runs both a BLE GATT Server (advertiser) and BLE Scanner (client) simultaneously to support bidirectional communication.
+- **Burst Frame Chunking**: Large JSON operations are automatically segmented into 180-byte frames (`FLK:<msgId>:<seq>:<total>:<data>`) and reassembled on receipt.
+- **Store-and-Forward Routing**: Built-in multi-hop routing (`meshRouter.ts`) allows Phone A to reach Phone C through intermediate Phone B with loop prevention and TTL decrements.
+- **Testing on Physical Phones**:
+  1. Install APK on both phones: `adb install -r FIELDLINK-tacticalmesh-debug.apk` (or copy `.apk` file directly).
+  2. Turn **OFF** Wi-Fi and Mobile Data on both phones; turn **ON** Bluetooth.
+  3. Launch FIELDLINK on both devices.
+  4. In **Sync Center**, tap **`[SEND TEST MESSAGE]`** on Phone A.
+  5. Phone B chimes and confirms: `LIVE P2P MESSAGE CONFIRMED: "HELLO FROM NODE-XXXX"`.
+  6. Any asset or personnel mutation made on Phone A updates Phone B's screen in real time!
 
 - **Local-First Storage**: Every create, update, and delete writes instantly to browser **IndexedDB** (sub-2ms latency).
 - **CRDT Convergence**: State changes are encapsulated as Conflict-Free Replicated Data Type operations with **Hybrid Logical Clocks (HLC)** and SHA-256 integrity hashes.
