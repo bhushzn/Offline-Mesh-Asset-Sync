@@ -1,14 +1,9 @@
 // FIELDLINK Tactical Operational Checklists View
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { 
-  CheckSquare, 
   Plus, 
-  CheckCircle2, 
-  Clock, 
   RotateCcw,
   Check,
-  ChevronRight,
-  Sliders,
   X
 } from 'lucide-react';
 import { ChecklistExecution, ChecklistCategory, ChecklistItem } from '../../types/tactical';
@@ -26,24 +21,26 @@ export const ChecklistsView: React.FC = () => {
   const [newCategory, setNewCategory] = useState<ChecklistCategory>('Equipment Inspection');
   const [rawItems, setRawItems] = useState('Check primary HF/VHF radio comms\nVerify GPS coordinates and compass heading\nInspect vehicle battery voltage (>12.6V)\nVerify trauma kit seal integrity');
 
+  const loadChecklists = useCallback(async () => {
+    const list = await offlineStorage.getAll<ChecklistExecution>(STORES.CHECKLISTS);
+    setChecklists(list);
+    setActiveChecklist((prev) => {
+      if (!prev && list.length > 0) return list[0];
+      if (prev) {
+        const updated = list.find((c) => c.id === prev.id);
+        return updated || prev;
+      }
+      return null;
+    });
+  }, []);
+
   useEffect(() => {
     loadChecklists();
     const unsub = offlineStorage.subscribe((store) => {
       if (store === STORES.CHECKLISTS) loadChecklists();
     });
     return () => unsub();
-  }, []);
-
-  const loadChecklists = async () => {
-    const list = await offlineStorage.getAll<ChecklistExecution>(STORES.CHECKLISTS);
-    setChecklists(list);
-    if (!activeChecklist && list.length > 0) {
-      setActiveChecklist(list[0]);
-    } else if (activeChecklist) {
-      const updated = list.find((c) => c.id === activeChecklist.id);
-      if (updated) setActiveChecklist(updated);
-    }
-  };
+  }, [loadChecklists]);
 
   const handleToggleItem = async (checklistId: string, itemId: string) => {
     tacticalAudio.playClick();

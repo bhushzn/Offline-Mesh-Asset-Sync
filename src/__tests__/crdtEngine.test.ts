@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { CRDTEngine, HybridLogicalClock } from '../services/crdtService';
-import { sha256Hex, canonicalJSON } from '../utils/crypto';
+import { canonicalJSON } from '../utils/crypto';
 import { Asset } from '../types/tactical';
 
 describe('FIELDLINK Tactical CRDT Engine & Clocks', () => {

@@ -26,11 +26,13 @@
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
+    "@types/pdfkit": "^0.17.6",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "@types/web-bluetooth": "^0.0.21",
     "@vitejs/plugin-react": "^6.1.1",
     "oxlint": "^1.81.0",
+    "pdfkit": "^0.20.2",
     "typescript": "~6.0.2",
     "vite": "^8.3.0",
     "vitest": "^5.0.0"

@@ -54,13 +54,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const content = (
     <div className="flex flex-col h-full bg-white border-r border-slate-200 select-none text-slate-700 w-64">
       {/* Brand Header */}
-      <div className="p-5 border-b border-slate-200 flex items-center space-x-3 bg-slate-50/50">
-        <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-sm">
+      <div className="p-5 border-b border-slate-200 flex items-center space-x-3 bg-slate-50/70">
+        <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs flex-shrink-0">
           <Layers className="w-5 h-5" />
         </div>
         <div>
-          <div className="font-sans font-bold tracking-tight text-slate-900 text-base">FIELDLINK</div>
-          <div className="text-[10px] tracking-wider text-blue-700 uppercase font-mono font-semibold">Mesh Operations</div>
+          <div className="font-sans font-extrabold tracking-tight text-slate-900 text-base">FIELDLINK</div>
+          <div className="text-[9px] tracking-wider text-blue-700 uppercase font-mono font-bold">Tactical Mesh Operations</div>
         </div>
       </div>
 

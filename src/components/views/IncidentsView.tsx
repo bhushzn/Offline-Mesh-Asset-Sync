@@ -1,5 +1,5 @@
 // FIELDLINK Tactical Incidents & SITREP Logger View
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { 
   AlertTriangle, 
   Plus, 
@@ -9,11 +9,7 @@ import {
   User, 
   Package, 
   ShieldAlert, 
-  CheckCircle2, 
-  Radio,
-  X,
-  Check,
-  Filter
+  X
 } from 'lucide-react';
 import { Incident, IncidentSeverity, IncidentType, IncidentStatus, Asset, Personnel } from '../../types/tactical';
 import { offlineStorage, STORES } from '../../services/offlineStorageService';
@@ -39,15 +35,7 @@ export const IncidentsView: React.FC = () => {
   const [formRelatedAsset, setFormRelatedAsset] = useState('');
   const [formRelatedPerson, setFormRelatedPerson] = useState('');
 
-  useEffect(() => {
-    loadData();
-    const unsub = offlineStorage.subscribe((store) => {
-      if (store === STORES.INCIDENTS) loadData();
-    });
-    return () => unsub();
-  }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     const [incList, aList, pList] = await Promise.all([
       offlineStorage.getAll<Incident>(STORES.INCIDENTS),
       offlineStorage.getAll<Asset>(STORES.ASSETS),
@@ -56,7 +44,15 @@ export const IncidentsView: React.FC = () => {
     setIncidents(incList);
     setAssets(aList);
     setPersonnel(pList);
-  };
+  }, []);
+
+  useEffect(() => {
+    loadData();
+    const unsub = offlineStorage.subscribe((store) => {
+      if (store === STORES.INCIDENTS) loadData();
+    });
+    return () => unsub();
+  }, [loadData]);
 
   const filteredIncidents = incidents.filter((inc) => {
     const matchSearch =

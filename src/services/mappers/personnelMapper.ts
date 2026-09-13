@@ -1,4 +1,4 @@
-import { Personnel, PersonnelStatus, RollCallStatus } from '../../types/tactical';
+import { Personnel, RollCallStatus } from '../../types/tactical';
 
 export const personnelMapper = {
   toBackendPayload: (person: Personnel) => ({

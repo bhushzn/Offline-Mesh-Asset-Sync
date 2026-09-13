@@ -1,5 +1,5 @@
 // FIELDLINK Personnel & Muster Roll Operations View
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { 
   Users, 
   Search, 
@@ -16,7 +16,7 @@ import {
   UserCheck,
   HeartPulse
 } from 'lucide-react';
-import { Personnel, RollCallRecord, RollCallStatus, PersonnelStatus } from '../../types/tactical';
+import { Personnel, RollCallRecord, RollCallStatus } from '../../types/tactical';
 import { offlineStorage, STORES } from '../../services/offlineStorageService';
 import { syncQueue } from '../../services/syncQueueService';
 import { tacticalAudio } from '../../utils/audio';
@@ -38,17 +38,7 @@ export const PersonnelView: React.FC = () => {
   const [formBlood, setFormBlood] = useState('O+');
   const [formSector, setFormSector] = useState('Base Alpha');
 
-  useEffect(() => {
-    loadData();
-    const unsub = offlineStorage.subscribe((store) => {
-      if (store === STORES.PERSONNEL || store === STORES.ROLL_CALLS) {
-        loadData();
-      }
-    });
-    return () => unsub();
-  }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     const [pList, rList] = await Promise.all([
       offlineStorage.getAll<Personnel>(STORES.PERSONNEL),
       offlineStorage.getAll<RollCallRecord>(STORES.ROLL_CALLS),
@@ -57,7 +47,17 @@ export const PersonnelView: React.FC = () => {
     if (rList.length > 0) {
       setLatestRollCall(rList[rList.length - 1]);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadData();
+    const unsub = offlineStorage.subscribe((store) => {
+      if (store === STORES.PERSONNEL || store === STORES.ROLL_CALLS) {
+        loadData();
+      }
+    });
+    return () => unsub();
+  }, [loadData]);
 
   const filteredPersonnel = personnel.filter(
     (p) =>

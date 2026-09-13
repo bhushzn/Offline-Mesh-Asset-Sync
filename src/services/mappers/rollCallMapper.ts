@@ -1,4 +1,4 @@
-﻿import { RollCallRecord, RollCallStatus } from '../../types/tactical';
+import { RollCallRecord } from '../../types/tactical';
 
 export const rollCallMapper = {
   toBackendPayload: (record: RollCallRecord) => ({

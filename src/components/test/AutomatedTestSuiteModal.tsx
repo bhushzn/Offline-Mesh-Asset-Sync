@@ -6,10 +6,7 @@ import {
   XCircle, 
   Play, 
   RotateCcw, 
-  ShieldCheck, 
-  Clock, 
-  Cpu, 
-  Layers 
+  ShieldCheck 
 } from 'lucide-react';
 import { offlineStorage, STORES } from '../../services/offlineStorageService';
 import { CRDTEngine } from '../../services/crdtService';

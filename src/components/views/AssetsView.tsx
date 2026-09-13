@@ -1,5 +1,5 @@
 // FIELDLINK Tactical Assets Management View
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { 
   Package, 
   Search, 
@@ -10,12 +10,10 @@ import {
   Clock, 
   CheckCircle2, 
   AlertTriangle, 
-  QrCode,
-  SlidersHorizontal,
-  X,
-  Smartphone,
-  ShieldCheck,
-  Check
+  QrCode, 
+  X, 
+  ShieldCheck, 
+  Check 
 } from 'lucide-react';
 import { Asset, AssetCategory, AssetCondition, AssetStatus } from '../../types/tactical';
 import { offlineStorage, STORES } from '../../services/offlineStorageService';
@@ -30,7 +28,7 @@ export const AssetsView: React.FC = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
-  const [scannedCode, setScannedCode] = useState('');
+  const [_scannedCode, setScannedCode] = useState('');
 
   // New Asset form state
   const [formCustomId, setFormCustomId] = useState('');
@@ -42,18 +40,18 @@ export const AssetsView: React.FC = () => {
   const [formSector, setFormSector] = useState('Base Alpha');
   const [formNotes, setFormNotes] = useState('');
 
+  const loadAssets = useCallback(async () => {
+    const list = await offlineStorage.getAll<Asset>(STORES.ASSETS);
+    setAssets(list);
+  }, []);
+
   useEffect(() => {
     loadAssets();
     const unsub = offlineStorage.subscribe((store) => {
       if (store === STORES.ASSETS) loadAssets();
     });
     return () => unsub();
-  }, []);
-
-  const loadAssets = async () => {
-    const list = await offlineStorage.getAll<Asset>(STORES.ASSETS);
-    setAssets(list);
-  };
+  }, [loadAssets]);
 
   const filteredAssets = assets.filter((asset) => {
     const matchSearch =

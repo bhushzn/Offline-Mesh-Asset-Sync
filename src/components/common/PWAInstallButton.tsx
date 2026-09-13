@@ -1,16 +1,13 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Download, CheckCircle } from 'lucide-react';
 
 export const PWAInstallButton: React.FC = () => {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
-  const [isInstalled, setIsInstalled] = useState(false);
+  const [isInstalled, setIsInstalled] = useState<boolean>(() => {
+    return typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches;
+  });
 
   useEffect(() => {
-    // Check if already installed
-    if (typeof window !== 'undefined' && window.matchMedia('(display-mode: standalone)').matches) {
-      setIsInstalled(true);
-    }
-
     const handler = (e: any) => {
       e.preventDefault();
       setDeferredPrompt(e);
@@ -43,9 +40,9 @@ export const PWAInstallButton: React.FC = () => {
 
   if (isInstalled) {
     return (
-      <div className="hidden lg:flex items-center space-x-1.5 px-2 py-1 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-mono">
-        <CheckCircle className="w-3.5 h-3.5" />
-        <span>PWA INSTALLED</span>
+      <div className="hidden lg:flex items-center space-x-1.5 px-2.5 py-1 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-mono font-medium">
+        <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+        <span>PWA Installed</span>
       </div>
     );
   }
@@ -54,11 +51,10 @@ export const PWAInstallButton: React.FC = () => {
     <button
       onClick={handleInstallClick}
       title="Install FIELDLINK PWA for 100% Offline Access"
-      className="flex items-center space-x-1.5 px-2.5 py-1 rounded bg-[#ff5533]/15 hover:bg-[#ff5533]/25 text-[#ff5533] border border-[#ff5533]/30 transition-all font-mono text-[11px] font-semibold tracking-wide shadow-sm"
+      className="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 transition-all font-mono text-[11px] font-semibold tracking-wide shadow-2xs"
     >
-      <Download className="w-3.5 h-3.5" />
-      <span className="hidden sm:inline">INSTALL PWA</span>
-      <span className="sm:hidden">INSTALL</span>
+      <Download className="w-3.5 h-3.5 text-blue-600" />
+      <span className="hidden sm:inline">PWA</span>
     </button>
   );
 };

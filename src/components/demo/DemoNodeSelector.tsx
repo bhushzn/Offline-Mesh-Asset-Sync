@@ -2,12 +2,8 @@
 import React, { useState } from 'react';
 import confetti from 'canvas-confetti';
 import { 
-  Radio, 
   Smartphone, 
-  Zap, 
-  CheckCircle2, 
   Sparkles, 
-  ArrowRightLeft, 
   PlayCircle 
 } from 'lucide-react';
 import { DeviceMetadata } from '../../types/tactical';
