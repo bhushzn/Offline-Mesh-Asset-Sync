@@ -1,6 +1,18 @@
 // FIELDLINK Tactical Types & Canonical Domain Models
 
-export type OperatingMode = 'FIELD_MODE' | 'DEMO_MODE';
+export type OperatingMode = 'FIELD_MODE' | 'ONLINE_MODE' | 'DEMO_MODE';
+
+export interface NetworkDiagnostics {
+  internet: 'ONLINE' | 'OFFLINE';
+  localSignaling: 'CONNECTED' | 'CONNECTING' | 'DISCONNECTED';
+  webrtc: 'CONNECTED' | 'CONNECTING' | 'DISCONNECTED' | 'NO_PEERS';
+  mesh: 'ACTIVE' | 'INACTIVE';
+  cloud: 'ONLINE' | 'DISABLED' | 'UNAVAILABLE';
+  activePeersCount: number;
+  pendingOpsCount: number;
+  lastSyncTime: number | null;
+  signalingUrl: string;
+}
 
 export type SyncStatus = 'synced' | 'pending' | 'syncing' | 'failed';
 

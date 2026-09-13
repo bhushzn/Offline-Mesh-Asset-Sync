@@ -217,6 +217,14 @@ export const MeshTopology3D: React.FC<MeshTopology3DProps> = ({
     });
   }, []);
 
+  // Listen to real mesh sync packet events
+  useEffect(() => {
+    const unsubPackets = syncManager.subscribePacketEvents((event) => {
+      spawn3DPacket(event.fromDeviceId, event.toDeviceId, 0x06b6d4, 0.045);
+    });
+    return () => unsubPackets();
+  }, [spawn3DPacket]);
+
   // Main Three.js Scene Setup & Lifecycle
   useEffect(() => {
     if (!containerRef.current) return;

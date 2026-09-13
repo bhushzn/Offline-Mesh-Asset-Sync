@@ -59,6 +59,19 @@ class SyncManager {
     syncQueue.subscribe(() => {
       this.recalculateStats();
     });
+
+    // 3. Auto-sync on peer connect / reconnect
+    let knownOnlinePeers = new Set<string>();
+    p2pMesh.subscribePeers((peers) => {
+      const currentOnline = peers.filter(p => p.status === 'online');
+      for (const peer of currentOnline) {
+        if (!knownOnlinePeers.has(peer.deviceId)) {
+          // New or reconnected peer discovered: automatically initiate sync
+          this.syncWithPeer(peer.deviceId).catch(() => {});
+        }
+      }
+      knownOnlinePeers = new Set(currentOnline.map(p => p.deviceId));
+    });
   }
 
   public subscribePacketEvents(listener: SyncEventListener): () => void {

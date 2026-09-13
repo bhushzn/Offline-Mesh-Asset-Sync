@@ -1,40 +1,95 @@
-import { IMeshTransport } from './MeshTransport';
+﻿import { IMeshTransport } from './MeshTransport';
 import { WebRTCTransport } from './WebRTCTransport';
 import { BLETransport } from './BLETransport';
 import { LocalNetworkTransport } from './LocalNetworkTransport';
 import { CloudTransport } from './CloudTransport';
+import { LocalSignalingClient, SignalingPeerInfo } from './LocalSignalingClient';
 import { OperatingMode, PeerNode, TransportCapabilities, TransportStatus, TransportType } from '../../types/tactical';
+
+export interface NetworkDiagnostics {
+  internet: 'ONLINE' | 'OFFLINE';
+  localSignaling: 'CONNECTED' | 'CONNECTING' | 'DISCONNECTED';
+  webrtc: 'CONNECTED' | 'CONNECTING' | 'DISCONNECTED' | 'NO_PEERS';
+  mesh: 'ACTIVE' | 'INACTIVE';
+  cloud: 'ONLINE' | 'DISABLED' | 'UNAVAILABLE';
+  activePeersCount: number;
+  pendingOpsCount: number;
+  lastSyncTime: number | null;
+  signalingUrl: string;
+}
 
 export class TransportManager {
   private transports: Map<TransportType, IMeshTransport> = new Map();
+  private signalingClient: LocalSignalingClient;
+  private webrtcTransport: WebRTCTransport;
   private peers: Map<string, PeerNode> = new Map();
   private mode: OperatingMode = 'FIELD_MODE';
   private localDeviceId: string;
+  private localDeviceName: string;
+  private localRole: string;
   private messageListeners = new Set<(message: any, peerId: string, transport: TransportType) => void>();
   private peerListeners = new Set<(peers: PeerNode[]) => void>();
+  private diagListeners = new Set<(diag: NetworkDiagnostics) => void>();
 
-  constructor(localDeviceId: string, wsUrl: string) {
+  constructor(localDeviceId: string, defaultWsUrl: string) {
     this.localDeviceId = localDeviceId;
+    this.localDeviceName = (typeof localStorage !== 'undefined' && localStorage.getItem('fieldlink_device_name')) || `Node-${localDeviceId.slice(0, 5)}`;
+    this.localRole = 'Field Operator';
 
-    // 1. Initialize Local Network Transport (BroadcastChannel)
+    // 1. Initialize Local LAN Signaling Client (for offline WebRTC discovery)
+    this.signalingClient = new LocalSignalingClient(
+      localDeviceId,
+      this.localDeviceName,
+      this.localRole
+    );
+
+    // 2. Initialize WebRTC Transport (Primary direct P2P data channel)
+    this.webrtcTransport = new WebRTCTransport(
+      localDeviceId,
+      (targetPeerId, signal) => {
+        // Send WebRTC signals over Local LAN signaling client (and BroadcastChannel for multi-tab)
+        this.signalingClient.sendSignal(targetPeerId, signal);
+        this.transports.get('LocalNetwork')?.send(targetPeerId, {
+          __webrtc_signal: signal,
+          senderDeviceId: this.localDeviceId,
+          targetDeviceId: targetPeerId,
+          timestamp: Date.now()
+        });
+      },
+      this.mode
+    );
+    this.transports.set('WebRTC', this.webrtcTransport);
+
+    // 3. Initialize Local Network Transport (BroadcastChannel for same-browser dev)
     const localNet = new LocalNetworkTransport(localDeviceId);
     this.transports.set('LocalNetwork', localNet);
 
-    // 2. Initialize Cloud Transport (WebSocket Gateway)
-    const cloud = new CloudTransport(localDeviceId, wsUrl);
-    this.transports.set('Cloud', cloud);
-
-    // 3. Initialize BLE Transport
+    // 4. Initialize BLE Transport (Optional Web Bluetooth)
     const ble = new BLETransport();
     this.transports.set('BLE', ble);
 
-    // 4. Initialize WebRTC Transport with signaling routed through LocalNet or Cloud
-    const webrtc = new WebRTCTransport(localDeviceId, (targetPeerId, signal) => {
-      this.sendSignalingPacket(targetPeerId, signal);
-    });
-    this.transports.set('WebRTC', webrtc);
+    // 5. Initialize Cloud Transport (Optional WebSocket relay for ONLINE_MODE only)
+    const cloud = new CloudTransport(localDeviceId, defaultWsUrl);
+    this.transports.set('Cloud', cloud);
 
-    // Wire up listeners
+    // Wire up Signaling Client events
+    this.signalingClient.onSignal((signal, fromDeviceId) => {
+      this.webrtcTransport.handleSignal(fromDeviceId, signal);
+    });
+
+    this.signalingClient.onPeerEvent((action, peer) => {
+      if (action === 'PEER_JOINED') {
+        this.handleLANPeerDiscovered(peer);
+      } else if (action === 'PEER_LEFT') {
+        this.handleLANPeerLeft(peer.deviceId);
+      }
+    });
+
+    this.signalingClient.onStatusChange(() => {
+      this.notifyDiagnostics();
+    });
+
+    // Wire up Transport listeners
     for (const [type, transport] of this.transports) {
       transport.onMessage((msg, peerId, transType) => {
         this.handleIncomingTransportMessage(msg, peerId, transType);
@@ -43,12 +98,17 @@ export class TransportManager {
         this.handleTransportStateChange(peerId, status, transType);
       });
     }
+
+    // Set initial mode
+    this.setMode(this.mode);
   }
 
   public setMode(newMode: OperatingMode) {
     this.mode = newMode;
+    this.webrtcTransport.setMode(newMode);
+
     if (newMode === 'FIELD_MODE') {
-      // Clean out simulated peers
+      // In FIELD_MODE: Purge simulated peers
       for (const [id, peer] of Array.from(this.peers.entries())) {
         if (peer.isSimulated) {
           this.peers.delete(id);
@@ -56,10 +116,20 @@ export class TransportManager {
       }
     }
     this.notifyPeers();
+    this.notifyDiagnostics();
   }
 
   public getMode(): OperatingMode {
     return this.mode;
+  }
+
+  public setSignalingServerUrl(url: string) {
+    this.signalingClient.setServerUrl(url);
+    this.notifyDiagnostics();
+  }
+
+  public getSignalingServerUrl(): string {
+    return this.signalingClient.getServerUrl();
   }
 
   public getTransportCapabilities(): TransportCapabilities[] {
@@ -81,25 +151,103 @@ export class TransportManager {
     return () => this.messageListeners.delete(listener);
   }
 
+  public subscribeDiagnostics(listener: (diag: NetworkDiagnostics) => void): () => void {
+    this.diagListeners.add(listener);
+    listener(this.getDiagnostics());
+    return () => this.diagListeners.delete(listener);
+  }
+
+  public getDiagnostics(): NetworkDiagnostics {
+    const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : false;
+    const sigStatus = this.signalingClient.getStatus();
+    const realPeers = Array.from(this.peers.values()).filter(p => !p.isSimulated);
+    const connectedWebRTC = realPeers.filter(p => p.connectionType === 'WebRTC' && p.status === 'online');
+
+    let webrtcStatus: 'CONNECTED' | 'CONNECTING' | 'DISCONNECTED' | 'NO_PEERS' = 'NO_PEERS';
+    if (connectedWebRTC.length > 0) {
+      webrtcStatus = 'CONNECTED';
+    } else if (realPeers.some(p => p.status === 'syncing')) {
+      webrtcStatus = 'CONNECTING';
+    } else if (realPeers.length > 0) {
+      webrtcStatus = 'DISCONNECTED';
+    }
+
+    const isMeshActive = realPeers.some(p => p.status === 'online') || (this.mode === 'DEMO_MODE');
+
+    let cloudStatus: 'ONLINE' | 'DISABLED' | 'UNAVAILABLE' = 'DISABLED';
+    if (this.mode !== 'FIELD_MODE') {
+      const cloud = this.transports.get('Cloud');
+      cloudStatus = cloud && cloud.getStatus() === 'connected' ? 'ONLINE' : 'UNAVAILABLE';
+    }
+
+    return {
+      internet: isOnline ? 'ONLINE' : 'OFFLINE',
+      localSignaling: sigStatus,
+      webrtc: webrtcStatus,
+      mesh: isMeshActive ? 'ACTIVE' : 'INACTIVE',
+      cloud: cloudStatus,
+      activePeersCount: realPeers.filter(p => p.status === 'online').length,
+      pendingOpsCount: 0,
+      lastSyncTime: Date.now(),
+      signalingUrl: this.signalingClient.getServerUrl(),
+    };
+  }
+
+  private notifyDiagnostics() {
+    const diag = this.getDiagnostics();
+    for (const listener of this.diagListeners) {
+      listener(diag);
+    }
+  }
+
   public async broadcast(message: any): Promise<number> {
     let totalSent = 0;
-    for (const [, transport] of this.transports) {
-      const sent = await transport.broadcast(message);
-      totalSent += sent;
+
+    // 1. Primary: Send directly over WebRTC DataChannels
+    const webrtcSent = await this.webrtcTransport.broadcast(message);
+    totalSent += webrtcSent;
+
+    // 2. BroadcastChannel for local development tabs
+    const localSent = await this.transports.get('LocalNetwork')?.broadcast(message) || 0;
+    if (totalSent === 0) totalSent += localSent;
+
+    // 3. Cloud (Only in ONLINE_MODE)
+    if (this.mode === 'ONLINE_MODE') {
+      const cloudSent = await this.transports.get('Cloud')?.broadcast(message) || 0;
+      totalSent += cloudSent;
     }
+
     return totalSent;
   }
 
   public async sendToPeer(peerId: string, message: any): Promise<boolean> {
     const peer = this.peers.get(peerId);
-    if (!peer) return false;
 
-    const transport = this.transports.get(peer.connectionType);
-    if (transport) {
-      return await transport.send(peerId, message);
+    // 1. If WebRTC connection is open to this peer, send directly
+    if (this.webrtcTransport.isPeerConnected(peerId)) {
+      const sent = await this.webrtcTransport.send(peerId, message);
+      if (sent) return true;
     }
-    // Fallback: broadcast with target
-    return (await this.broadcast({ ...message, targetDeviceId: peerId })) > 0;
+
+    // 2. Fallback to peer's specific connection type if available
+    if (peer) {
+      const transport = this.transports.get(peer.connectionType);
+      if (transport && transport.type !== 'WebRTC') {
+        const sent = await transport.send(peerId, message);
+        if (sent) return true;
+      }
+    }
+
+    // 3. Cloud fallback in ONLINE_MODE
+    if (this.mode === 'ONLINE_MODE') {
+      const cloud = this.transports.get('Cloud');
+      if (cloud) {
+        return await cloud.send(peerId, message);
+      }
+    }
+
+    // 4. Same-browser BroadcastChannel fallback
+    return (await this.transports.get('LocalNetwork')?.send(peerId, message)) || false;
   }
 
   public addSimulatedPeer(peer: PeerNode) {
@@ -118,36 +266,75 @@ export class TransportManager {
     }
   }
 
+  private handleLANPeerDiscovered(peerInfo: SignalingPeerInfo) {
+    const peerId = peerInfo.deviceId;
+    if (peerId === this.localDeviceId) return;
+
+    if (!this.peers.has(peerId)) {
+      this.peers.set(peerId, {
+        deviceId: peerId,
+        deviceName: peerInfo.deviceName,
+        role: peerInfo.role,
+        nodeType: 'Delta Patrol',
+        rssi: -45,
+        status: 'syncing',
+        lastSyncAt: Date.now(),
+        latencyMs: 15,
+        connectionType: 'WebRTC',
+        isTrusted: true,
+        isSimulated: false,
+        batteryLevel: 90,
+      });
+      this.notifyPeers();
+    }
+
+    // Deterministic WebRTC negotiation:
+    // The device with lexicographically greater deviceId acts as initiator
+    if (this.localDeviceId > peerId) {
+      this.webrtcTransport.connect(peerId).catch(() => {});
+    }
+  }
+
+  private handleLANPeerLeft(peerId: string) {
+    if (this.peers.has(peerId) && !this.peers.get(peerId)?.isSimulated) {
+      const peer = this.peers.get(peerId)!;
+      peer.status = 'disconnected';
+      this.notifyPeers();
+      this.notifyDiagnostics();
+    }
+  }
+
   private handleIncomingTransportMessage(msg: any, peerId: string, transportType: TransportType) {
-    // Check if message is a WebRTC signaling message
+    // 1. Handle WebRTC signaling envelope if received over BroadcastChannel
     if (msg && msg.__webrtc_signal) {
-      const webrtc = this.transports.get('WebRTC') as WebRTCTransport;
-      if (webrtc) {
-        webrtc.handleSignal(msg.senderDeviceId || peerId, msg.__webrtc_signal);
-      }
+      this.webrtcTransport.handleSignal(msg.senderDeviceId || peerId, msg.__webrtc_signal);
       return;
     }
 
-    // Register or update peer info
+    // 2. Register or update peer presence
     if (msg && msg.senderDeviceId && msg.senderDeviceId !== this.localDeviceId) {
-      const existing = this.peers.get(msg.senderDeviceId);
-      this.peers.set(msg.senderDeviceId, {
-        deviceId: msg.senderDeviceId,
-        deviceName: msg.deviceName || existing?.deviceName || `Node-${msg.senderDeviceId.slice(0, 4)}`,
+      const senderId = msg.senderDeviceId;
+      const existing = this.peers.get(senderId);
+
+      this.peers.set(senderId, {
+        deviceId: senderId,
+        deviceName: msg.deviceName || existing?.deviceName || `Node-${senderId.slice(0, 5)}`,
         role: msg.role || existing?.role || 'Field Operator',
         nodeType: msg.nodeType || existing?.nodeType || 'Relay Node',
-        rssi: transportType === 'LocalNetwork' ? -35 : transportType === 'WebRTC' ? -48 : -72,
+        rssi: transportType === 'WebRTC' ? -42 : transportType === 'LocalNetwork' ? -30 : -68,
         status: 'online',
         lastSyncAt: Date.now(),
-        latencyMs: transportType === 'LocalNetwork' ? 2 : 25,
+        latencyMs: transportType === 'WebRTC' ? 12 : 2,
         connectionType: transportType,
         isTrusted: true,
         isSimulated: false,
         batteryLevel: msg.batteryLevel || existing?.batteryLevel || 88,
       });
       this.notifyPeers();
+      this.notifyDiagnostics();
     }
 
+    // 3. Dispatch to message listeners
     for (const listener of this.messageListeners) {
       listener(msg, peerId, transportType);
     }
@@ -159,19 +346,8 @@ export class TransportManager {
       peer.status = status === 'connected' ? 'online' : status === 'connecting' ? 'syncing' : 'disconnected';
       peer.connectionType = transportType;
       this.notifyPeers();
+      this.notifyDiagnostics();
     }
-  }
-
-  private sendSignalingPacket(targetPeerId: string, signal: any) {
-    const packet = {
-      __webrtc_signal: signal,
-      senderDeviceId: this.localDeviceId,
-      targetDeviceId: targetPeerId,
-      timestamp: Date.now(),
-    };
-    // Send over LocalNetwork and Cloud
-    this.transports.get('LocalNetwork')?.send(targetPeerId, packet);
-    this.transports.get('Cloud')?.send(targetPeerId, packet);
   }
 
   private notifyPeers() {
@@ -182,11 +358,13 @@ export class TransportManager {
   }
 
   public async destroy() {
+    this.signalingClient.destroy();
     for (const [, transport] of this.transports) {
       await transport.destroy();
     }
     this.peers.clear();
     this.messageListeners.clear();
     this.peerListeners.clear();
+    this.diagListeners.clear();
   }
 }

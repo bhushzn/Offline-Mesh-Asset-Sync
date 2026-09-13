@@ -40,6 +40,7 @@ import { offlineStorage, STORES } from '../../services/offlineStorageService';
 import { syncManager } from '../../services/syncManager';
 import { p2pMesh } from '../../services/p2pMeshService';
 import { MeshTopology3D } from '../mesh/MeshTopology3D';
+import { NetworkStatusBar } from '../common/NetworkStatusBar';
 import { tacticalAudio } from '../../utils/audio';
 import { ActiveTab } from '../layout/Sidebar';
 
@@ -105,6 +106,9 @@ export const DashboardView: React.FC<Props> = ({
 
   return (
     <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
+      {/* 0. Real Network Status Diagnostic Bar (Proves Offline Mesh Status Instantly) */}
+      <NetworkStatusBar mode={mode} />
+
       {/* 1. Tactical Command Operations Summary Bar (Answers 8 Operational Questions Instantly) */}
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
         {/* Q1: Network Health */}
@@ -470,6 +474,65 @@ export const DashboardView: React.FC<Props> = ({
           </div>
         </div>
       )}
+
+      {/* 4. Live Offline CRDT Data Flow Pipeline (Technical Architecture Demonstration) */}
+      <div className="bg-slate-900 text-slate-100 p-5 rounded-2xl border border-slate-800 shadow-sm space-y-4 font-mono">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+          <div className="flex items-center space-x-2">
+            <Share2 className="w-4 h-4 text-cyan-400" />
+            <h3 className="font-bold text-sm tracking-wide text-white">LIVE OFFLINE-FIRST DATA PIPELINE</h3>
+          </div>
+          <div className="flex items-center space-x-3 text-xs text-slate-400">
+            <span>Ops Created: <strong className="text-white">{syncStats.totalOpsCount}</strong></span>
+            <span>Pending: <strong className="text-amber-400">{syncStats.pendingCount}</strong></span>
+            <span>Synced: <strong className="text-emerald-400">{syncStats.syncedCount}</strong></span>
+            <span>Conflicts Resolved: <strong className="text-cyan-300">{syncStats.conflictsResolved || 0}</strong></span>
+          </div>
+        </div>
+
+        {/* Visual Pipeline Flow Diagram */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 text-center text-[10px]">
+          <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1">
+            <div className="text-slate-400 font-bold">1. USER ACTION</div>
+            <div className="text-emerald-400 text-[11px] font-semibold">Local Edit</div>
+          </div>
+
+          <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1">
+            <div className="text-slate-400 font-bold">2. INDEXEDDB</div>
+            <div className="text-cyan-400 text-[11px] font-semibold">Durable Write</div>
+          </div>
+
+          <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1">
+            <div className="text-slate-400 font-bold">3. CRDT OP</div>
+            <div className="text-blue-400 text-[11px] font-semibold">HLC + SHA-256</div>
+          </div>
+
+          <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1">
+            <div className="text-slate-400 font-bold">4. SYNC QUEUE</div>
+            <div className="text-amber-400 text-[11px] font-semibold">{syncStats.pendingCount} Pending</div>
+          </div>
+
+          <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1">
+            <div className="text-slate-400 font-bold">5. LAN SIGNAL</div>
+            <div className="text-purple-400 text-[11px] font-semibold">ws://:3001</div>
+          </div>
+
+          <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1">
+            <div className="text-slate-400 font-bold">6. WEBRTC DC</div>
+            <div className="text-emerald-400 text-[11px] font-semibold">Direct P2P</div>
+          </div>
+
+          <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1">
+            <div className="text-slate-400 font-bold">7. CRDT MERGE</div>
+            <div className="text-cyan-400 text-[11px] font-semibold">LWW Deterministic</div>
+          </div>
+
+          <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 space-y-1">
+            <div className="text-slate-400 font-bold">8. UI SYNC</div>
+            <div className="text-emerald-400 text-[11px] font-semibold">0ms Cloud Lag</div>
+          </div>
+        </div>
+      </div>
 
       {/* 5. Centerpiece: 3D Tactical Mesh Topology & Live Nearby Peers */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

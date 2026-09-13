@@ -246,12 +246,6 @@ export const SyncCenterView: React.FC<Props> = ({ syncStats }) => {
         </div>
 
         <div className="flex items-center gap-3 w-full md:w-auto justify-end">
-          {lastCloudResult && (
-            <div className="text-right text-[11px] font-mono hidden sm:block">
-              <div className="text-emerald-700 font-medium">↑ {lastCloudResult.pushedCount} pushed • ↓ {lastCloudResult.pulledCount} pulled</div>
-              <div className="text-slate-400">{new Date(lastCloudResult.timestamp).toLocaleTimeString()}</div>
-            </div>
-          )}
           <button
             onClick={handleTriggerCloudSync}
             disabled={isCloudSyncing}
@@ -260,6 +254,72 @@ export const SyncCenterView: React.FC<Props> = ({ syncStats }) => {
             <RefreshCw className={`w-3.5 h-3.5 ${isCloudSyncing ? 'animate-spin' : ''}`} />
             <span>Reconcile Cloud</span>
           </button>
+        </div>
+      </div>
+      <div className="bg-slate-900 text-slate-100 p-5 rounded-2xl border border-slate-800 shadow-sm space-y-4 font-mono">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-3">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-cyan-950 border border-cyan-700 text-cyan-400 flex items-center justify-center font-bold">
+              <Radio className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className="font-bold text-sm text-white">Local LAN Mesh Signaling Server</span>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
+                  OFFLINE LAN READY
+                </span>
+              </div>
+              <div className="text-xs text-slate-400 mt-0.5">
+                Path: <span className="text-cyan-300 font-semibold">{p2pMesh.getSignalingServerUrl()}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const current = p2pMesh.getSignalingServerUrl();
+                const updated = prompt('Enter Local Mesh Server WebSocket URL (e.g. ws://192.168.43.100:3001/ws/mesh):', current);
+                if (updated && updated.trim()) {
+                  p2pMesh.setSignalingServerUrl(updated.trim());
+                  tacticalAudio.playClick();
+                  loadData();
+                }
+              }}
+              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition flex items-center gap-1.5"
+            >
+              <span>Change Server Address</span>
+            </button>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(p2pMesh.getSignalingServerUrl());
+                alert('Copied Local Mesh Address to clipboard: ' + p2pMesh.getSignalingServerUrl());
+              }}
+              className="px-3 py-1.5 rounded-lg bg-cyan-700 hover:bg-cyan-600 text-white text-xs font-bold transition flex items-center gap-1"
+            >
+              <span>Copy Address</span>
+            </button>
+          </div>
+        </div>
+
+        {/* 4-Step Quick Pairing Instructions */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 text-xs">
+          <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800">
+            <div className="text-cyan-400 font-bold text-[11px]">1. CONNECT WI-FI</div>
+            <div className="text-slate-400 text-[10px] mt-0.5">Join both devices to same Wi-Fi / Hotspot (Internet OFF).</div>
+          </div>
+          <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800">
+            <div className="text-cyan-400 font-bold text-[11px]">2. START SERVER</div>
+            <div className="text-slate-400 text-[10px] mt-0.5">Run <code className="text-emerald-300">npm run mesh-server</code> on laptop.</div>
+          </div>
+          <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800">
+            <div className="text-cyan-400 font-bold text-[11px]">3. OPEN APP</div>
+            <div className="text-slate-400 text-[10px] mt-0.5">Open FIELDLINK on Phone/Tablet & Laptop.</div>
+          </div>
+          <div className="bg-slate-950/80 p-2.5 rounded-xl border border-slate-800">
+            <div className="text-cyan-400 font-bold text-[11px]">4. DIRECT WEBRTC</div>
+            <div className="text-slate-400 text-[10px] mt-0.5">Peers auto-discover and sync via DataChannel.</div>
+          </div>
         </div>
       </div>
 

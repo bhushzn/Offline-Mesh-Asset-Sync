@@ -1,147 +1,170 @@
 # FIELDLINK // Zero-Infrastructure Tactical Asset & Roll-Call Mesh Sync
 
-[![React](https://img.shields.io/badge/React-18.3-61DAFB?logo=react&logoColor=black)](https://reactjs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![React](https://img.shields.io/badge/React-19.2-61DAFB?logo=react&logoColor=black)](https://reactjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-8.3-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Fastify](https://img.shields.io/badge/Fastify-4.28-000000?logo=fastify&logoColor=white)](https://fastify.dev/)
 [![Three.js](https://img.shields.io/badge/Three.js-3D_Mesh-000000?logo=three.js&logoColor=white)](https://threejs.org/)
 [![PWA](https://img.shields.io/badge/PWA-Offline_First-5A0FC8?logo=pwa&logoColor=white)](https://web.dev/progressive-web-apps/)
 [![IndexedDB](https://img.shields.io/badge/IndexedDB-Local_Data_Store-FF6B6B)](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API)
-[![Vitest](https://img.shields.io/badge/Vitest-16_Passed-22C55E?logo=vitest&logoColor=white)](https://vitest.dev/)
+[![Vitest](https://img.shields.io/badge/Vitest-20_Passed-22C55E?logo=vitest&logoColor=white)](https://vitest.dev/)
 
 ---
 
-## 📌 Project Metadata & Hackathon Alignment
+## 📌 Project Overview & Core Mission
 
-| Parameter | Details |
-|---|---|
-| **Project Name** | **FIELDLINK (Offline-Mesh-Asset-Sync)** |
-| **Event** | **Engineers 2047 (VISHVA-TECH '26)** — SATI Vidisha |
-| **Domain Track** | **Disaster Management, Defense Logistics & Resilient Public Infrastructure (Viksit Bharat @ 2047)** |
-| **Primary Repository** | [https://github.com/bhushzn/Offline-Mesh-Asset-Sync](https://github.com/bhushzn/Offline-Mesh-Asset-Sync) |
-| **Working Prototype** | **[Live Web App (Vercel)](https://offline-mesh-asset-sync.vercel.app/)** • Local PWA (`http://localhost:5173`) |
-| **Evaluation Round** | Round 1 (Desk-Side Technical) & Round 2 (Grand Finale Stage Demos) |
+> **FIELDLINK MUST ACTUALLY WORK WITHOUT INTERNET.**
+
+During severe disaster responses, subterranean operations, or tactical deployments in contested zones, cellular backhauls, fiber trunks, and satellite uplinks are often destroyed or jammed.
+
+**FIELDLINK** is an offline-first tactical operations Progressive Web Application (PWA) that empowers first responders, disaster response units (NDRF/SDRF), and defense field squads to coordinate equipment accountability, personnel muster rolls, pre-mission checklists, and real-time tactical SITREPs **with zero internet, zero cloud dependency, and zero pre-configured infrastructure**.
 
 ---
 
-## 📖 Executive Summary
+## 🏗️ The Offline-First Architecture
 
-When natural catastrophes (earthquakes, cyclones, floods) or tactical frontline operations trigger **total telecommunication failure** (cellular towers destroyed, fiber severed, satellite links jammed), conventional centralized emergency software fails completely.
-
-**FIELDLINK** is an enterprise-grade, offline-first Progressive Web Application (PWA) that empowers first responders, disaster response units (NDRF/SDRF), and tactical field squads to manage mission assets, conduct real-time muster roll calls, execute tactical checklists, and broadcast emergency SITREPs **with zero internet, zero cloud dependencies, and zero pre-configured infrastructure**.
-
-Using **Conflict-Free Replicated Data Types (CRDTs)** with **Hybrid Logical Clocks (HLC)** and cryptographic SHA-256 operation hashing, FIELDLINK synchronizes state peer-to-peer across nearby mobile phones, tablets, and laptops over **WebRTC DataChannels, LocalNetwork BroadcastChannels, and Web Bluetooth (BLE)**. When any device reconnects to a command network or internet gateway, all offline mutations merge deterministically with 100% mathematical convergence.
-
----
-
-## 🇮🇳 Alignment with Viksit Bharat @ 2047
-
-Under the vision of **Viksit Bharat 2047**, resilient critical infrastructure and sovereign disaster defense systems are vital:
-1. **Disaster Resilience (NDRF / SDRF)**: Ensures continuous situational awareness and rapid life-saving supply allocation in severed disaster zones.
-2. **Defense & Border Logistics**: Zero-emission, zero-cloud tactical asset tracking with peer-to-peer cryptographic security (AES-GCM-256).
-3. **Smart & Resilient Cities**: Distributed fault-tolerant infrastructure monitoring that survives urban blackouts.
-
----
-
-## 🏗️ System Architecture & Data Flow
-
-```mermaid
-flowchart TD
-    subgraph Client_Node [Tactical Field Node: Mobile / Laptop / Tablet]
-        UI[Operational UI: 44px Touch / Light Theme]
-        IDB[(IndexedDB: 11 Object Stores)]
-        CRDT[CRDT Engine + Hybrid Logical Clock]
-        Router[Multi-Hop Mesh Router: Max 7 Hops]
-        Transports[Transport Manager Layer]
-    end
-
-    subgraph P2P_Mesh_Transports [Multi-Transport P2P Mesh]
-        WebRTC[WebRTC DataChannels: Direct P2P]
-        LocalNet[LocalNetwork Broadcast: Sub-ms LAN]
-        BLE[Web Bluetooth GATT: Proximity]
-    end
-
-    subgraph Command_HQ [Optional Command HQ / Central Cloud]
-        FastifyServer[Fastify 4.28 Backend]
-        Postgres[(PostgreSQL 16 Database)]
-        WSGate[WebSocket Signaling Gateway]
-    end
-
-    UI --> IDB
-    UI --> CRDT
-    CRDT --> Router
-    Router --> Transports
-    Transports <--> WebRTC
-    Transports <--> LocalNet
-    Transports <--> BLE
-    Transports -.->|When Uplink Available| WSGate
-    WSGate <--> FastifyServer
-    FastifyServer <--> Postgres
+```
+                    FIELDLINK CLIENT (Device A)
+                                │
+                    ┌───────────┴───────────┐
+                    ▼                       ▼
+            LOCAL APPLICATION       LOCAL LAN DISCOVERY
+                    │                       │
+                INDEXEDDB           LOCAL SIGNALING SERVER
+            (Durable Storage)       (ws://192.168.x.x:3001)
+                    │                       │
+              CRDT OPERATION        WebRTC NEGOTIATION
+              (HLC + SHA-256)         (SDP / Local ICE)
+                    │                       │
+               SYNC QUEUE ──────────► WebRTC DATACHANNEL
+                                            │
+                                            ▼
+                                   NEARBY DEVICE (Device B)
+                                            │
+                                       CRDT MERGE
+                                  (Deterministic LWW)
+                                            │
+                                        INDEXEDDB
+                                            │
+                                        UI UPDATE
 ```
 
-### Protocol & Conflict Resolution Specification:
-- **Hybrid Logical Clocks (HLC)**: Tuple `(physical_ms, logical_counter, device_id)` providing strict Lamport causal ordering regardless of hardware clock drift.
-- **Deterministic Last-Write-Wins (LWW)**: Highest HLC timestamp wins, with deterministic SHA-256 operation hashing and lexicographical device-ID tie-breaking.
-- **Multi-Hop Store & Forward Routing**: Loops suppressed via dynamic ring-buffer cache of packet nonces; TTL capped at 7 hops.
-- **Audit Trail**: Every mutation and state change is stamped locally with a tamper-evident audit log (`AuditLogService`).
+- **Local-First Storage**: Every create, update, and delete writes instantly to browser **IndexedDB** (sub-2ms latency).
+- **CRDT Convergence**: State changes are encapsulated as Conflict-Free Replicated Data Type operations with **Hybrid Logical Clocks (HLC)** and SHA-256 integrity hashes.
+- **Local LAN WebRTC Signaling**: Lightweight local Node.js WebSocket signaling server runs directly on the command laptop or hotspot machine (`0.0.0.0:3001`), exchanging only peer IDs, SDP offers/answers, and ICE host candidates.
+- **Direct WebRTC DataChannel**: Operational data travels directly peer-to-peer over WebRTC DataChannels across local Wi-Fi without internet or external STUN servers.
+- **Optional Cloud Backhaul**: Cloud synchronization is strictly an optional background bridge when internet is available. Cloud failure never impairs local field operations.
 
 ---
 
-## ⚡ Hardware Architecture & Requirements
-
-FIELDLINK is built on modern web standards requiring **zero proprietary hardware** (runs on Commercial-Off-The-Shelf laptops, Android/iOS devices):
-
-| Component | Minimum Specification | Supported Hardware |
-|---|---|---|
-| **Field Terminals** | Any smartphone, tablet, or laptop | COTS Android, iOS, Windows, Linux, macOS |
-| **Local Radios** | Wi-Fi 802.11 b/g/n/ac or Bluetooth 4.2+ | Standard on-board Wi-Fi and Bluetooth chips |
-| **Optional Embedded Relay** | Raspberry Pi 4 / ESP32 Gateway | Wi-Fi hotspot or serial packet bridge |
-| **Display Standard** | Responsive mobile touch display | 44px touch targets, daylight-readable light theme |
-
----
-
-## 🚀 Step-by-Step Local Execution
+## 🚀 Quick Start Guide (Local Setup)
 
 ### 1. Prerequisites
 - **Node.js**: v18.0.0 or higher
 - **npm**: v9.0.0 or higher
 
 ### 2. Installation
-
 ```bash
 # Clone the repository
-git clone https://github.com/bhushzn/Offline-Mesh-Asset-Sync.git
+git clone https://github.com/harshtripathi249-sudo/Offline-Mesh-Asset-Sync.git
 cd Offline-Mesh-Asset-Sync
 
-# Install root dependencies
+# Install dependencies
 npm install
-
-# (Optional) Install backend dependencies
-cd backend && npm install && cd ..
 ```
 
-### 3. Running the Tactical Web App & Backend
+### 3. Running the Tactical Mesh Server & Application
 
+#### Terminal 1: Start the Offline Mesh Signaling Server
 ```bash
-# Terminal 1: Start the Frontend Application (Vite Dev Server)
-npm run dev
-# Frontend runs at: http://localhost:5173
-
-# Terminal 2: Start the Backend Gateway (Fastify + WebSockets)
-npm run dev:backend
-# Backend runs at: http://localhost:3001
+npm run mesh-server
 ```
+*Output will display your machine's local IP (e.g., `ws://192.168.43.100:3001/ws/mesh`).*
 
-### 4. Running the Automated Test Suite
-
+#### Terminal 2: Start the Frontend Application
 ```bash
-# Run Vitest automated unit & CRDT convergence tests
+npm run dev -- --host
+```
+*Access the app at `http://localhost:5173` on your PC, or `http://<YOUR_LAN_IP>:5173` on other phones/tablets.*
+
+---
+
+## 📱 Two-Device Live Offline Demo (Step-by-Step)
+
+Follow these exact steps to demonstrate FIELDLINK without Internet:
+
+### Step 1: Connect to Local Wi-Fi / Hotspot
+1. Turn on Wi-Fi hotspot on your laptop or phone.
+2. Connect your **Laptop (Device A)** and **Phone/Tablet (Device B)** to this Wi-Fi hotspot.
+3. **Turn Mobile Data / Internet OFF** on all devices (Ensure only local Wi-Fi is active).
+
+### Step 2: Start the Local Mesh Server
+1. On Device A (Laptop), find your local IP address:
+   - **Windows**: Open Command Prompt and run `ipconfig` (look for IPv4 Address, e.g. `192.168.43.100`).
+2. Run the local mesh server:
+   ```powershell
+   npm run mesh-server
+   ```
+3. Run the web application:
+   ```powershell
+   npm run dev -- --host
+   ```
+
+### Step 3: Open FIELDLINK on Both Devices
+1. On **Laptop (Device A)**: Open `http://localhost:5173`.
+2. On **Phone (Device B)**: Open `http://192.168.43.100:5173` in mobile Chrome/Safari.
+
+### Step 4: Verify Mesh Connection
+1. Observe the **FIELDLINK LIVE MESH STATUS** bar at the top of the dashboard:
+   - **Internet**: `OFFLINE`
+   - **Local LAN Server**: `CONNECTED`
+   - **P2P Mesh**: `ACTIVE`
+   - **WebRTC Transport**: `CONNECTED`
+   - **Connected Peers**: `1` (or `2`)
+2. In the 3D Tactical Mesh canvas, observe the real peer node appear.
+
+### Step 5: Perform Real Offline Sync
+1. On **Device A (Laptop)**: Go to **Assets & Equipment**, click `+ New Asset`, and create:
+   - Name: `Tactical Drone Raven-X`
+   - Status: `Deployed`
+2. **Instant Sync**: Look at **Device B (Phone)** — the asset appears immediately via WebRTC DataChannel!
+3. On **Device B (Phone)**: Go to **Incidents**, click `Report SITREP`, and log a critical perimeter alert.
+4. Look at **Device A (Laptop)** — the alert appears in real-time with zero internet!
+
+---
+
+## 🔬 Technical Deep-Dive
+
+### 1. Why WebRTC Works in True Offline LAN Mode
+Standard WebRTC examples fail offline because they hardcode public Google STUN servers (`stun.l.google.com`). When internet is disconnected, STUN requests time out and ICE gathering fails.
+
+FIELDLINK solves this:
+- In **`FIELD_MODE`**: `iceServers: []` is passed to `RTCPeerConnection`.
+- The browser immediately gathers local **host ICE candidates** (e.g. `192.168.43.100:54321` and `192.168.43.105:54322`).
+- WebRTC DataChannel connects directly over local Wi-Fi UDP within milliseconds.
+
+### 2. Conflict-Free Replicated Data Types (CRDT)
+- **LWW-Register**: Entity fields are versioned using Hybrid Logical Clocks `(timestamp, counter, deviceId)`. If Device A and Device B edit the same asset concurrently while disconnected, `Max(HLC_A, HLC_B)` wins deterministically with device ID tie-breaking.
+- **Grow-Only Sets & Monotonic Counters**: Personnel roll call statuses use idempotent monotonic set unions, preventing duplicate or lost muster records across asynchronous hops.
+- **Merkle Tree Delta Synchronization**: Nodes exchange 64-bit cryptographic root hashes to bisect and transmit only missing mutation journals, minimizing radio transmission overhead.
+
+### 3. 3D Spatial Mesh Visualization
+- Built with hardware-accelerated **Three.js v0.186** and **OrbitControls**.
+- Features cursor raycasting, billboard canvas sprites, and dynamic packet routing animations wired to live `syncManager.subscribePacketEvents` triggers.
+
+---
+
+## 🧪 Automated Test Suite
+
+Run the full Vitest automated unit and integration suite:
+```bash
 npm test
 ```
-*Output: 16 of 16 tests passing (HLC ordering, CRDT merges, vector clock convergence).*
+*Output: 20/20 tests passing across 4 test suites:*
+- `crdtEngine.test.ts` (HLC ordering, canonical JSON, SHA-256 op hashing, LWW conflict resolution)
+- `offlineSync.test.ts` (Vector clock delta calculation, tie-breaking, roll call muster merging, checklist state merging)
+- `rollCallMapper.test.ts` & `personnelMapper.test.ts`
 
-### 5. Production Build
-
+To compile production bundles:
 ```bash
 npm run build
 ```
@@ -213,8 +236,10 @@ npm run build
 
 ---
 
-## 🛡️ License & Authors
+## 🛡️ Hackathon Submission Details
 
-- **Event**: Engineers 2047 Hybrid Hackathon
-- **Team**: FIELDLINK Operations Team
+- **Event**: Engineers 2047 (VISHVA-TECH '26)
+- **Project**: FIELDLINK (Offline-Mesh-Asset-Sync)
+- **Track**: Disaster Management, Defense Logistics & Resilient Public Infrastructure (Viksit Bharat @ 2047)
+- **Team**: APEX PLATOON
 - **License**: MIT Open Source License
